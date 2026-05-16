@@ -179,6 +179,35 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports, new input-format readers, a
 
 ---
 
+## Citation
+
+If you use this tool in scientific work, please credit the author:
+
+> Freire de Oliveira, M. (2026). *DJI Waypoint Mission Creator* [software]. University of Nebraska–Lincoln, Institute of Agriculture and Natural Resources. https://github.com/mailson-unl/dji-waypoint-mission-creation
+
+**BibTeX:**
+
+```bibtex
+@software{freiredeoliveira_dji_waypoint_2026,
+  author  = {Freire de Oliveira, Mailson},
+  title   = {DJI Waypoint Mission Creator},
+  year    = {2026},
+  url     = {https://github.com/mailson-unl/dji-waypoint-mission-creation},
+  note    = {Water and Cropping Systems Extension Educator,
+             University of Nebraska--Lincoln,
+             Institute of Agriculture and Natural Resources}
+}
+```
+
+---
+
+## Author
+
+**Mailson Freire de Oliveira** — Water and Cropping Systems Extension Educator
+University of Nebraska–Lincoln, Institute of Agriculture and Natural Resources
+
+---
+
 ## License
 
 [MIT](LICENSE)

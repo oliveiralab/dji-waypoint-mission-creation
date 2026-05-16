@@ -220,7 +220,11 @@ def render_sidebar(points: list[Point] | None) -> MissionConfig:
         st.markdown(
             f"**dji-waypoints** — open source\n\n"
             f"[GitHub repo]({REPO_URL})\n\n"
-            "Bug reports and PRs welcome."
+            "Created by **Mailson Freire de Oliveira**, "
+            "Water and Cropping Systems Extension Educator, "
+            "University of Nebraska–Lincoln, "
+            "Institute of Agriculture and Natural Resources.\n\n"
+            "If you use this tool in scientific work, please cite the author."
         )
 
     drone_str = "M3E" if drone_model.startswith("M4E") else drone_model
