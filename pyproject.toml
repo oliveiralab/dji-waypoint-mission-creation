@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dji-waypoints"
+version = "0.1.0"
+description = "Convert GIS sampling points (KML, Shapefile, GeoJSON, CSV) into DJI Pilot 2 waypoint mission KMZ files."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Mailson Freire de Oliveira" }]
+keywords = ["dji", "drone", "kmz", "waypoint", "mission", "gis", "qgis", "precision-agriculture"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+dependencies = [
+    "djikmz",
+    "pyshp",
+]
+
+[project.optional-dependencies]
+docx = ["python-docx"]
+dev  = ["pytest>=7", "ruff>=0.4"]
+
+[project.scripts]
+dji-mission = "dji_waypoints.cli:main"
+
+[project.urls]
+Homepage   = "https://github.com/mailson-unl/dji-waypoint-mission-creation"
+Repository = "https://github.com/mailson-unl/dji-waypoint-mission-creation"
+Issues     = "https://github.com/mailson-unl/dji-waypoint-mission-creation/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -5,12 +5,16 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
 
-# DJI mission output files
+# DJI mission outputs (sample CSV under examples/ is committed)
 *.kmz
 *.kml
 
-# GIS data files
+# Project-specific raw GIS data (kept local)
 east butler/
 *.shp
 *.shx
