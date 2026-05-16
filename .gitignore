@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# DJI mission output files
+*.kmz
+*.kml
+
+# GIS data files
+east butler/
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+
+# Generated documents
+*.docx
+*.pdf
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
