@@ -3,7 +3,7 @@
 # runtime deps from pyproject.toml (djikmz, pyshp, fastkml, shapely,
 # pyproj, lxml).
 .
-streamlit>=1.30
+streamlit>=1.42
 
 # Legacy stand-alone scripts at the repo root (not used by the web app)
 python-docx

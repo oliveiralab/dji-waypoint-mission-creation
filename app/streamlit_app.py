@@ -113,9 +113,10 @@ def _save_upload(tmp_dir: Path, uploaded) -> Path:
 # ---------------------------------------------------------------------------
 
 CUSTOM_CSS = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap');
-
   :root {
     --accent:        #5b8a5a;
     --accent-ink:    #2f5a3a;
@@ -597,13 +598,16 @@ def render_file_bar(src_path: Path, points: list[Point]) -> None:
 
 
 def render_map(points: list[Point]) -> None:
-    st.map(
-        data=[{"lat": p.lat, "lon": p.lon} for p in points],
-        zoom=14,
-        color="#5b8a5a",
-        size=12,
-        width="stretch",
-    )
+    try:
+        st.map(
+            data=[{"lat": p.lat, "lon": p.lon} for p in points],
+            zoom=14,
+            color="#5b8a5a",
+            size=12,
+            width="stretch",
+        )
+    except Exception as exc:  # noqa: BLE001 - map is non-critical preview
+        st.caption(f"Map preview unavailable ({exc.__class__.__name__}).")
 
 
 def render_metric_strip(points: list[Point], config: MissionConfig,
