@@ -28,7 +28,8 @@ dependencies = [
 
 [project.optional-dependencies]
 docx = ["python-docx"]
-dev  = ["pytest>=7", "ruff>=0.4"]
+web  = ["streamlit>=1.30"]
+dev  = ["pytest>=7", "ruff>=0.4", "streamlit>=1.30"]
 
 [project.scripts]
 dji-mission = "dji_waypoints.cli:main"

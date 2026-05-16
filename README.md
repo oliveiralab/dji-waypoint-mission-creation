@@ -12,6 +12,7 @@ Designed for precision-agriculture and research workflows — stand counting, gr
 
 ## Features
 
+- **No-code web app** — upload points, fill a form, download a KMZ ([screenshot below](#web-app-no-code))
 - **Multiple input formats**: KML, Shapefile (`.shp`), GeoJSON, CSV
 - **Terrain following**: constant AGL above local ground (constant GSD)
 - **Flat-field mode**: constant height above takeoff (no elevation data needed)
@@ -34,6 +35,27 @@ git clone https://github.com/mailson-unl/dji-waypoint-mission-creation
 cd dji-waypoint-mission-creation
 pip install -e ".[dev]"
 ```
+
+---
+
+## Web app (no-code)
+
+For non-programmers: a Streamlit UI that lets you upload a point file, pick mission settings from a form, preview the waypoints on a map, and download the KMZ.
+
+```bash
+pip install -e ".[web]"
+streamlit run app/streamlit_app.py
+```
+
+Then open the URL Streamlit prints (default `http://localhost:8501`). Upload one of:
+
+- **CSV** (simplest — columns `id, lat, lon, elevation`)
+- **KML** or **GeoJSON**
+- **Zipped Shapefile** — put `.shp + .shx + .dbf + .prj` in a single `.zip`
+
+Pick your drone, height (ft or m), gimbal pitch, hover duration, etc., click **Build mission KMZ**, and download the result.
+
+> **Sharing it:** the app is a single Python file. You can deploy it for free on [Streamlit Community Cloud](https://streamlit.io/cloud) so collaborators don't need to install anything.
 
 ---
 
