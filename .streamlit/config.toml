@@ -5,6 +5,11 @@ maxUploadSize = 50
 [browser]
 gatherUsageStats = false
 
+# Sage palette from the handoff design (oklch values approximated in hex).
 [theme]
-base = "light"
-primaryColor = "#1f6feb"
+base                = "light"
+primaryColor        = "#5b8a5a"
+backgroundColor     = "#f8f7f3"
+secondaryBackgroundColor = "#fbfaf6"
+textColor           = "#1c2a22"
+font                = "sans serif"
