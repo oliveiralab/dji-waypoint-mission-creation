@@ -549,7 +549,7 @@ def render_upload() -> Path | None:
     with col_sample:
         if st.button(
             "Try sample data",
-            use_container_width=True,
+            width="stretch",
             help="Load the 6-point demo CSV bundled in the repo.",
         ):
             st.session_state["use_sample"] = True
@@ -600,7 +600,9 @@ def render_map(points: list[Point]) -> None:
     st.map(
         data=[{"lat": p.lat, "lon": p.lon} for p in points],
         zoom=14,
-        use_container_width=True,
+        color="#5b8a5a",
+        size=12,
+        width="stretch",
     )
 
 
@@ -792,7 +794,7 @@ def render_output_card(points: list[Point], config: MissionConfig) -> None:
     if st.button(
         "Build mission KMZ",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         key="build_btn",
     ):
         with st.spinner("Building KMZ…"):
@@ -821,7 +823,7 @@ def render_output_card(points: list[Point], config: MissionConfig) -> None:
             file_name=result["file_name"],
             mime="application/vnd.google-earth.kmz",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             key="dl_btn",
         )
         st.caption(
@@ -862,7 +864,7 @@ def render_waypoint_table(points: list[Point]) -> None:
                  "elevation_m": p.elevation_m}
                 for p in points[:500]
             ],
-            use_container_width=True,
+            width="stretch",
         )
         if len(points) > 500:
             st.caption(f"Showing first 500 of {len(points)} rows.")
