@@ -1,0 +1,8 @@
+# DJI waypoint mission builder
+djikmz
+
+# Shapefile reading (convert_to_dji_m3m_30ft_brucetest22.py)
+pyshp
+
+# Markdown → Word document (md_to_docx.py)
+python-docx
