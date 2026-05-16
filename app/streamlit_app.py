@@ -28,6 +28,7 @@ from dji_waypoints.readers import Point
 SUPPORTED_EXTS = {".csv", ".kml", ".geojson", ".json", ".zip"}
 SAMPLE_PATH = Path(__file__).resolve().parent.parent / "examples" / "sample_points.csv"
 REPO_URL = "https://github.com/mailson-unl/dji-waypoint-mission-creation"
+APP_URL = "https://dji-waypoint-mission.streamlit.app/"
 
 # US FAA Part 107: drones must stay <= 400 ft (~121.92 m) AGL.
 PART_107_CEILING_M = 121.92
@@ -219,7 +220,7 @@ def render_sidebar(points: list[Point] | None) -> MissionConfig:
     with st.sidebar.expander("About"):
         st.markdown(
             f"**dji-waypoints** — open source\n\n"
-            f"[GitHub repo]({REPO_URL})\n\n"
+            f"[Live app]({APP_URL}) · [GitHub repo]({REPO_URL})\n\n"
             "Created by **Mailson Freire de Oliveira**, "
             "Water and Cropping Systems Extension Educator, "
             "University of Nebraska–Lincoln, "

@@ -1,8 +1,11 @@
 # DJI Waypoint Mission Creator
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://dji-waypoint-mission.streamlit.app/)
 [![CI](https://github.com/mailson-unl/dji-waypoint-mission-creation/actions/workflows/ci.yml/badge.svg)](https://github.com/mailson-unl/dji-waypoint-mission-creation/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+
+> 🚁 **Try it now:** <https://dji-waypoint-mission.streamlit.app/> — no install needed.
 
 Convert GIS sampling points (**KML, Shapefile, GeoJSON, or CSV**) into **DJI Pilot 2 waypoint mission KMZ** files for autonomous drone surveys.
 
@@ -44,9 +47,9 @@ A Streamlit UI for non-programmers: upload a point file, tweak settings in the s
 
 ### Use it online
 
-The app is deployment-ready for **[Streamlit Community Cloud](https://share.streamlit.io)** (free). Once deployed, the public URL is added here so collaborators can just click and go — no install needed.
+**👉 <https://dji-waypoint-mission.streamlit.app/>**
 
-> **Maintainer note:** to publish, go to <https://share.streamlit.io>, sign in with GitHub, click **New app**, select this repo (`mailson-unl/dji-waypoint-mission-creation`), branch `master`, main file `app/streamlit_app.py`, and deploy. The repo already contains `requirements.txt` and `.streamlit/config.toml` so the cloud builder works out of the box.
+Hosted free on [Streamlit Community Cloud](https://share.streamlit.io). Open it, upload your points, download a KMZ — no install, no account.
 
 ### Run locally
 
