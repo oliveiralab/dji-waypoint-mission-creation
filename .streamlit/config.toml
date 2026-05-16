@@ -1,5 +1,5 @@
 [server]
-# Allow zipped shapefile bundles up to 50 MB (default is 200 MB; trim for safety).
+# Allow zipped shapefile bundles up to 50 MB.
 maxUploadSize = 50
 
 [browser]
@@ -7,4 +7,8 @@ gatherUsageStats = false
 
 [theme]
 base = "light"
-primaryColor = "#1f6feb"
+primaryColor      = "#3d9957"
+backgroundColor   = "#f7f9f4"
+secondaryBackgroundColor = "#fafbf7"
+textColor         = "#1c2a22"
+font              = "sans serif"
