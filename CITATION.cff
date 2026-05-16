@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software in scientific work, please cite it as below."
+title: "DJI Waypoint Mission Creator"
+abstract: >-
+  Convert GIS sampling points (KML, Shapefile, GeoJSON, or CSV) into
+  DJI Pilot 2 waypoint mission KMZ files for autonomous drone surveys.
+  Designed for precision-agriculture and research workflows.
+type: software
+authors:
+  - family-names: "Freire de Oliveira"
+    given-names: "Mailson"
+    affiliation: >-
+      Water and Cropping Systems Extension Educator,
+      University of Nebraska-Lincoln,
+      Institute of Agriculture and Natural Resources
+repository-code: "https://github.com/mailson-unl/dji-waypoint-mission-creation"
+url: "https://github.com/mailson-unl/dji-waypoint-mission-creation"
+license: MIT
+keywords:
+  - drone
+  - UAV
+  - DJI
+  - waypoint mission
+  - precision agriculture
+  - remote sensing
+  - GIS
+  - KMZ
