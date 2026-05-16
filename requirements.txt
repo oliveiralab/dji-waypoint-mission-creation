@@ -1,8 +1,9 @@
-# DJI waypoint mission builder
-djikmz
+# Streamlit Community Cloud installs this file at deploy time.
+# Installing "." pulls in the dji_waypoints package and all its
+# runtime deps from pyproject.toml (djikmz, pyshp, fastkml, shapely,
+# pyproj, lxml).
+.
+streamlit>=1.30
 
-# Shapefile reading (convert_to_dji_m3m_30ft_brucetest22.py)
-pyshp
-
-# Markdown → Word document (md_to_docx.py)
+# Legacy stand-alone scripts at the repo root (not used by the web app)
 python-docx

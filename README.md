@@ -40,7 +40,15 @@ pip install -e ".[dev]"
 
 ## Web app (no-code)
 
-For non-programmers: a Streamlit UI that lets you upload a point file, pick mission settings from a form, preview the waypoints on a map, and download the KMZ.
+A Streamlit UI for non-programmers: upload a point file, tweak settings in the sidebar, see the mission on a map with stats (path length, ETA, AGL safety check), and download the KMZ.
+
+### Use it online
+
+The app is deployment-ready for **[Streamlit Community Cloud](https://share.streamlit.io)** (free). Once deployed, the public URL is added here so collaborators can just click and go — no install needed.
+
+> **Maintainer note:** to publish, go to <https://share.streamlit.io>, sign in with GitHub, click **New app**, select this repo (`mailson-unl/dji-waypoint-mission-creation`), branch `master`, main file `app/streamlit_app.py`, and deploy. The repo already contains `requirements.txt` and `.streamlit/config.toml` so the cloud builder works out of the box.
+
+### Run locally
 
 ```bash
 pip install -e ".[web]"
@@ -53,9 +61,7 @@ Then open the URL Streamlit prints (default `http://localhost:8501`). Upload one
 - **KML** or **GeoJSON**
 - **Zipped Shapefile** — put `.shp + .shx + .dbf + .prj` in a single `.zip`
 
-Pick your drone, height (ft or m), gimbal pitch, hover duration, etc., click **Build mission KMZ**, and download the result.
-
-> **Sharing it:** the app is a single Python file. You can deploy it for free on [Streamlit Community Cloud](https://streamlit.io/cloud) so collaborators don't need to install anything.
+Or click **Try sample data** to load a built-in example. Pick your drone, height (ft or m), gimbal pitch, hover duration, etc., click **Build mission KMZ**, and download the result.
 
 ---
 
