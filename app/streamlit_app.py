@@ -148,25 +148,6 @@ button[data-testid="stSidebarCollapsedControl"],
   border: none; border-top: 1px solid #e6ebe0;
   margin: 4px 0 16px;
 }
-/* Unit toggle */
-.wpt-unit-row {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
-}
-.wpt-unit-label { font-size: 12px; color: #556a5c; font-weight: 500; }
-.wpt-unit-toggle {
-  display: inline-flex; border: 1px solid #e0e8d8;
-  border-radius: 7px; padding: 2px; background: white;
-  font-family: 'Geist', system-ui, sans-serif;
-}
-.wpt-unit-pill {
-  padding: 3px 10px; border-radius: 5px; font-size: 11.5px;
-  cursor: pointer; border: none;
-}
-.wpt-unit-pill.active {
-  background: #e3f2e9; color: #2a6b3d; font-weight: 600;
-}
-.wpt-unit-pill:not(.active) { background: transparent; color: #7a8f80; font-weight: 500; }
 
 /* ── Top bar ── */
 .wpt-topbar {
@@ -506,7 +487,7 @@ def _render_topbar(filename: str | None) -> None:
     <div class="wpt-topbar">
       <div class="wpt-brand">
         <div class="wpt-brandmark">W</div>
-        <span>Waypoint <span class="wpt-brandsub">· DJI Mission Builder</span></span>
+        <span>Waypoint <span class="wpt-brandsub">&middot; DJI Mission Builder</span></span>
       </div>
       <div class="wpt-crumbs">
         {crumb_html}
@@ -580,33 +561,10 @@ def render_config(points: list[Point] | None) -> MissionConfig:
     st.markdown('<hr class="wpt-divider"/>', unsafe_allow_html=True)
     _sec("Altitude")
 
-    # Unit toggle via HTML buttons + session state
-    if "agl_unit" not in st.session_state:
-        st.session_state["agl_unit"] = "feet"
-
-    agl_unit = st.session_state["agl_unit"]
-    ft_active = 'class="wpt-unit-pill active"' if agl_unit == "feet"   else 'class="wpt-unit-pill"'
-    m_active  = 'class="wpt-unit-pill active"' if agl_unit == "metres" else 'class="wpt-unit-pill"'
-    st.markdown(f"""
-    <div class="wpt-unit-row">
-      <span class="wpt-unit-label">Unit</span>
-      <div class="wpt-unit-toggle">
-        <button {ft_active}
-          onclick="window.parent.document.dispatchEvent(
-            new CustomEvent('setAglUnit', {{detail:'feet'}}))">
-          feet</button>
-        <button {m_active}
-          onclick="window.parent.document.dispatchEvent(
-            new CustomEvent('setAglUnit', {{detail:'metres'}}))">
-          metres</button>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-    unit_radio = st.radio(
+    # FIX: use a simple radio for unit selection (HTML button approach was non-functional)
+    agl_unit = st.radio(
         "Height unit", ["feet", "metres"], horizontal=True, key="agl_unit",
-        label_visibility="collapsed",
     )
-    agl_unit = unit_radio
 
     if agl_unit == "feet":
         agl_ft = st.number_input(
@@ -726,12 +684,12 @@ def _preflight_html(
         sub  = "No per-point elevations &mdash; terrain unknown"
     rows.append(_safety_row(tone, "Terrain clearance", sub))
 
-    # 3) Battery estimate
+    # 3) Battery estimate — FIX: check >100 before >90 so neither branch is unreachable
     batt = battery_pct_estimate(points, config.speed_mps, config.hover_sec)
-    if batt > 90:
-        tone = "warn"; sub = f"~{batt}% of a single M3M pack &mdash; consider splitting"
-    elif batt > 100:
+    if batt > 100:
         tone = "err";  sub = f"~{batt}% &mdash; multi-battery mission required"
+    elif batt > 90:
+        tone = "warn"; sub = f"~{batt}% of a single M3M pack &mdash; consider splitting"
     else:
         tone = "ok"; ok_count += 1; sub = f"~{batt}% of a single M3M pack"
     rows.append(_safety_row(tone, "Mission within battery", sub))
@@ -763,7 +721,6 @@ def _preflight_html(
 def _output_card_html(
     points: list[Point] | None,
     config: MissionConfig | None,
-    built: bool,
 ) -> str:
     if points is None or config is None:
         return (
@@ -982,7 +939,7 @@ def main() -> None:
             result = st.session_state.get("result")
             if not result:
                 st.markdown(
-                    _output_card_html(points, config, built=False),
+                    _output_card_html(points, config),
                     unsafe_allow_html=True,
                 )
 
@@ -1009,6 +966,9 @@ def main() -> None:
                         except Exception as exc:
                             st.session_state.pop("result", None)
                             st.error(f"Mission build failed: {exc}")
+                    # FIX: rerun so the download button renders immediately
+                    if st.session_state.get("result"):
+                        st.rerun()
                 st.markdown(
                     '<div class="wpt-build-hint">Open in DJI Pilot 2 &rarr; Waypoint Mission &rarr; Import KMZ</div>',
                     unsafe_allow_html=True,
@@ -1036,7 +996,7 @@ def main() -> None:
         else:
             # No file loaded — show placeholder cards
             st.markdown(
-                _output_card_html(None, None, built=False),
+                _output_card_html(None, None),
                 unsafe_allow_html=True,
             )
 
