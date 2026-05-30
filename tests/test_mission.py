@@ -8,14 +8,10 @@ import pytest
 from dji_waypoints import MissionConfig, Point, build_mission
 
 
-def test_build_mission_creates_kmz(tmp_path):
-    points = [
-        Point(1, 40.617288, -96.179573, 327.83),
-        Point(2, 40.617450, -96.179620, 328.10),
-    ]
+def test_build_mission_creates_kmz(tmp_path, two_points):
     config = MissionConfig(drone_model="M3M", pilot_name="test")
     out = tmp_path / "mission.kmz"
-    result = build_mission(points, config, out)
+    result = build_mission(two_points, config, out)
     assert result == out
     assert out.exists()
     assert out.stat().st_size > 0
@@ -27,29 +23,21 @@ def test_build_mission_creates_kmz(tmp_path):
         assert any(n.lower().endswith(".kml") for n in names)
 
 
-def test_build_mission_terrain_follow(tmp_path):
-    points = [
-        Point(1, 40.617288, -96.179573, 327.83),
-        Point(2, 40.617450, -96.179620, 330.00),
-    ]
+def test_build_mission_terrain_follow(tmp_path, two_points):
     config = MissionConfig(
         terrain_follow=True,
         takeoff_elevation_m=327.83,
         agl_m=25.0,
     )
     out = tmp_path / "terrain.kmz"
-    result = build_mission(points, config, out)
+    result = build_mission(two_points, config, out)
     assert result.exists()
 
 
-def test_build_mission_terrain_follow_uses_min_elevation(tmp_path):
-    points = [
-        Point(1, 40.617288, -96.179573, 327.83),
-        Point(2, 40.617450, -96.179620, 330.00),
-    ]
+def test_build_mission_terrain_follow_uses_min_elevation(tmp_path, two_points):
     config = MissionConfig(terrain_follow=True, agl_m=25.0)
     out = tmp_path / "terrain2.kmz"
-    result = build_mission(points, config, out)
+    result = build_mission(two_points, config, out)
     assert result.exists()
 
 

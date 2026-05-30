@@ -6,9 +6,7 @@ from pathlib import Path
 import pytest
 
 from dji_waypoints.readers import load_points, read_csv, read_geojson, read_kml
-
-REPO = Path(__file__).resolve().parents[1]
-SAMPLE_CSV = REPO / "examples" / "sample_points.csv"
+from conftest import SAMPLE_CSV, SAMPLE_GEOJSON, SAMPLE_KML
 
 
 def test_read_csv_sample():
@@ -22,6 +20,38 @@ def test_read_csv_sample():
 
 def test_load_points_dispatch_csv():
     points = load_points(SAMPLE_CSV)
+    assert len(points) == 6
+
+
+def test_read_geojson_sample():
+    points = read_geojson(SAMPLE_GEOJSON)
+    assert len(points) == 6
+    assert points[0].id == 1
+    assert points[0].lat == pytest.approx(40.617288)
+    assert points[0].lon == pytest.approx(-96.179573)
+    assert points[0].elevation_m == pytest.approx(327.83)
+    assert points[-1].id == 6
+    assert points[-1].elevation_m == pytest.approx(329.38)
+
+
+def test_load_points_dispatch_geojson():
+    points = load_points(SAMPLE_GEOJSON)
+    assert len(points) == 6
+
+
+def test_read_kml_sample():
+    points = read_kml(SAMPLE_KML)
+    assert len(points) == 6
+    assert points[0].id == 1
+    assert points[0].lat == pytest.approx(40.617288)
+    assert points[0].lon == pytest.approx(-96.179573)
+    assert points[0].elevation_m == pytest.approx(327.83)
+    assert points[-1].id == 6
+    assert points[-1].elevation_m == pytest.approx(329.38)
+
+
+def test_load_points_dispatch_kml():
+    points = load_points(SAMPLE_KML)
     assert len(points) == 6
 
 
