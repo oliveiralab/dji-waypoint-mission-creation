@@ -10,6 +10,7 @@ import json
 import math
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -30,8 +31,21 @@ PART_107_CEILING_M = 121.92   # 400 ft AGL
 SOFT_WARN_AGL_M    = 100.0
 PHOTO_OVERHEAD_S   = 1.5      # gimbal settle + shutter per waypoint
 M3M_ENDURANCE_S    = 23 * 60  # ≈23 min hover endurance
+MAP_PIN_LAT_PARAM  = "takeoff_lat"
+MAP_PIN_LON_PARAM  = "takeoff_lon"
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class TakeoffReference:
+    source_key: str
+    source_label: str
+    detail: str
+    validation: str
+    elevation_m: float | None
+    lat: float | None = None
+    lon: float | None = None
+
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6_371_008.8
@@ -63,14 +77,183 @@ def format_duration(seconds: float) -> str:
     seconds = int(round(seconds))
     m, s = divmod(seconds, 60)
     if m < 60:
-        return f"{m}:{s:02d}"
+        return f"{m}m {s:02d}s"
     h, m = divmod(m, 60)
-    return f"{h}h {m:02d}:{s:02d}"
+    return f"{h}h {m:02d}m {s:02d}s"
 
 
 def elevation_range(points: list[Point]) -> tuple[float, float] | None:
     elevs = [p.elevation_m for p in points if p.elevation_m is not None]
     return (min(elevs), max(elevs)) if elevs else None
+
+
+def mission_mode_label(terrain_follow: bool) -> str:
+    return "Terrain following" if terrain_follow else "Flat-field"
+
+
+def mission_mode_description(terrain_follow: bool) -> str:
+    if terrain_follow:
+        return "Waypoint heights adjust to keep AGL constant above local terrain."
+    return "Waypoint heights stay constant relative to takeoff."
+
+
+def get_point_by_id(points: list[Point], point_id: int | None) -> Point | None:
+    if point_id is None:
+        return None
+    return next((p for p in points if p.id == point_id), None)
+
+
+def nearest_point(points: list[Point], lat: float, lon: float) -> Point | None:
+    if not points:
+        return None
+    return min(points, key=lambda p: haversine_m(lat, lon, p.lat, p.lon))
+
+
+def resolve_takeoff_reference(
+    points: list[Point],
+    terrain_follow: bool,
+    source_key: str,
+    manual_elev: float | None = None,
+    selected_point_id: int | None = None,
+    map_pin: tuple[float, float] | None = None,
+) -> TakeoffReference:
+    erange = elevation_range(points)
+
+    if not terrain_follow:
+        if source_key == "waypoint":
+            wp = get_point_by_id(points, selected_point_id)
+            if wp is not None:
+                detail = f"Waypoint WP {wp.id} · {wp.lat:.5f}, {wp.lon:.5f}"
+                return TakeoffReference(
+                    source_key=source_key,
+                    source_label="Imported waypoint",
+                    detail=detail,
+                    validation="Flat-field mode ignores terrain references; selection is informational.",
+                    elevation_m=wp.elevation_m,
+                    lat=wp.lat,
+                    lon=wp.lon,
+                )
+        if source_key == "map_pin" and map_pin is not None:
+            lat, lon = map_pin
+            return TakeoffReference(
+                source_key=source_key,
+                source_label="Map pin",
+                detail=f"Map pin · {lat:.5f}, {lon:.5f}",
+                validation="Flat-field mode ignores terrain references; map pin is informational.",
+                elevation_m=manual_elev,
+                lat=lat,
+                lon=lon,
+            )
+        if source_key == "manual" and manual_elev is not None:
+            return TakeoffReference(
+                source_key=source_key,
+                source_label="Manual elevation",
+                detail=f"Manual takeoff elevation · {manual_elev:.1f} m AMSL",
+                validation="Flat-field mode ignores terrain references; manual elevation is informational.",
+                elevation_m=manual_elev,
+            )
+        return TakeoffReference(
+            source_key="automatic",
+            source_label="Flat-field reference",
+            detail="Constant height above takeoff",
+            validation="All waypoints will use the same commanded height.",
+            elevation_m=erange[0] if erange is not None else None,
+        )
+
+    if source_key == "manual":
+        if manual_elev is None:
+            return TakeoffReference(
+                source_key=source_key,
+                source_label="Manual elevation",
+                detail="Manual takeoff elevation required",
+                validation="Enter the AMSL elevation of the takeoff spot.",
+                elevation_m=None,
+            )
+        return TakeoffReference(
+            source_key=source_key,
+            source_label="Manual elevation",
+            detail=f"Manual takeoff elevation · {manual_elev:.1f} m AMSL",
+            validation="Terrain-following will use the operator-supplied takeoff elevation.",
+            elevation_m=manual_elev,
+        )
+
+    if source_key == "waypoint":
+        wp = get_point_by_id(points, selected_point_id)
+        if wp is None:
+            return resolve_takeoff_reference(points, terrain_follow, "automatic")
+        if manual_elev is not None:
+            detail = f"Waypoint WP {wp.id} · override {manual_elev:.1f} m AMSL"
+            validation = "Terrain-following will use the manual override instead of waypoint elevation."
+            elev = manual_elev
+        elif wp.elevation_m is not None:
+            detail = f"Waypoint WP {wp.id} · {wp.elevation_m:.1f} m AMSL"
+            validation = "Terrain-following will reference the selected waypoint elevation."
+            elev = wp.elevation_m
+        else:
+            detail = f"Waypoint WP {wp.id} · no elevation in file"
+            validation = "Add a manual takeoff elevation or use a file with per-point elevation."
+            elev = None
+        return TakeoffReference(
+            source_key=source_key,
+            source_label="Imported waypoint",
+            detail=detail,
+            validation=validation,
+            elevation_m=elev,
+            lat=wp.lat,
+            lon=wp.lon,
+        )
+
+    if source_key == "map_pin":
+        if map_pin is None:
+            return TakeoffReference(
+                source_key=source_key,
+                source_label="Map pin",
+                detail="Map pin not set",
+                validation="Click the map to place the takeoff pin.",
+                elevation_m=manual_elev,
+            )
+        lat, lon = map_pin
+        nearest = nearest_point(points, lat, lon)
+        if manual_elev is not None:
+            detail = f"Map pin · {lat:.5f}, {lon:.5f} · override {manual_elev:.1f} m AMSL"
+            validation = "Terrain-following will use the manual override for the pinned location."
+            elev = manual_elev
+        elif nearest is not None and nearest.elevation_m is not None:
+            detail = (
+                f"Map pin · {lat:.5f}, {lon:.5f} · nearest WP {nearest.id} "
+                f"{nearest.elevation_m:.1f} m AMSL"
+            )
+            validation = "Terrain-following will use the nearest waypoint elevation to the pinned takeoff."
+            elev = nearest.elevation_m
+        else:
+            detail = f"Map pin · {lat:.5f}, {lon:.5f} · no elevation available"
+            validation = "Add a manual takeoff elevation or use points with elevation."
+            elev = None
+        return TakeoffReference(
+            source_key=source_key,
+            source_label="Map pin",
+            detail=detail,
+            validation=validation,
+            elevation_m=elev,
+            lat=lat,
+            lon=lon,
+        )
+
+    if erange is None:
+        return TakeoffReference(
+            source_key="automatic",
+            source_label="Automatic",
+            detail="Automatic reference unavailable",
+            validation="Terrain-following needs per-point elevations or a manual takeoff elevation.",
+            elevation_m=None,
+        )
+    return TakeoffReference(
+        source_key="automatic",
+        source_label="Automatic",
+        detail=f"Lowest waypoint elevation · {erange[0]:.1f} m AMSL",
+        validation="Terrain-following will reference the lowest waypoint elevation in the file.",
+        elevation_m=erange[0],
+    )
 
 
 def _save_upload(tmp_dir: Path, uploaded) -> Path:
@@ -97,6 +280,22 @@ def battery_pct_estimate(
     """Rough battery % for a single M3M pack (~23 min hover endurance)."""
     secs = estimate_flight_seconds(points, speed_mps, hover_sec)
     return round(secs / M3M_ENDURANCE_S * 100, 1)
+
+
+def get_map_pin_from_query() -> tuple[float, float] | None:
+    lat_raw = st.query_params.get(MAP_PIN_LAT_PARAM)
+    lon_raw = st.query_params.get(MAP_PIN_LON_PARAM)
+    if lat_raw is None or lon_raw is None:
+        return None
+    try:
+        return float(lat_raw), float(lon_raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def clear_map_pin_query() -> None:
+    st.query_params.pop(MAP_PIN_LAT_PARAM, None)
+    st.query_params.pop(MAP_PIN_LON_PARAM, None)
 
 
 # ── CSS injection ─────────────────────────────────────────────────────────────
@@ -398,12 +597,26 @@ button[data-testid="stSidebarCollapsedControl"],
 
 # ── Leaflet map component ─────────────────────────────────────────────────────
 
-def _leaflet_map_html(points: list[Point], height: int = 400) -> str:
+def _leaflet_map_html(
+    points: list[Point],
+    takeoff_ref: TakeoffReference | None = None,
+    height: int = 400,
+) -> str:
     """Return a self-contained Leaflet HTML string for the given points."""
     pts_json = json.dumps([
         {"id": p.id, "lat": p.lat, "lon": p.lon, "elev": p.elevation_m}
         for p in points
     ])
+    takeoff_json = json.dumps(
+        None
+        if takeoff_ref is None or takeoff_ref.lat is None or takeoff_ref.lon is None
+        else {
+            "label": takeoff_ref.source_label,
+            "detail": takeoff_ref.detail,
+            "lat": takeoff_ref.lat,
+            "lon": takeoff_ref.lon,
+        }
+    )
     return f"""
     <!doctype html><html><head>
     <meta charset="utf-8"/>
@@ -423,6 +636,11 @@ def _leaflet_map_html(points: list[Point], height: int = 400) -> str:
               font-size:11.5px; font-weight:500; background:transparent;
               color:#555; font-family:system-ui,sans-serif; }}
       .bm.on {{ background:#e3f2e9; color:#2a6b3d; font-weight:600; }}
+      .map-hint {{ position:absolute; right:12px; top:12px; z-index:1000; max-width:260px;
+                   background:rgba(255,255,255,0.96); border-radius:8px; padding:10px 12px;
+                   box-shadow:0 4px 14px rgba(0,0,0,0.15); color:#1c2a22;
+                   font:500 11.5px/1.45 system-ui,sans-serif; }}
+      .map-hint strong {{ display:block; margin-bottom:4px; }}
     </style></head><body>
     <div id="map"></div>
     <div class="bm-bar">
@@ -430,9 +648,14 @@ def _leaflet_map_html(points: list[Point], height: int = 400) -> str:
       <button class="bm"    onclick="setBM('topo',this)">terrain</button>
       <button class="bm"    onclick="setBM('osm',this)">streets</button>
     </div>
+    <div class="map-hint">
+      <strong>Takeoff pin</strong>
+      Click the map to place a takeoff reference pin.
+    </div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
       var PTS = {pts_json};
+      var TAKEOFF = {takeoff_json};
       var map = L.map('map', {{zoomControl:true}});
       var layers = {{
         sat:  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{attribution:'Esri'}}),
@@ -440,27 +663,37 @@ def _leaflet_map_html(points: list[Point], height: int = 400) -> str:
         osm:  L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{attribution:'&copy; OpenStreetMap', subdomains:'abc'}})
       }};
       var cur = layers.sat;
+      var takeoffMarker = null;
       cur.addTo(map);
       function setBM(k, btn) {{
         map.removeLayer(cur); cur = layers[k]; cur.addTo(map); cur.bringToBack();
         document.querySelectorAll('.bm').forEach(b => b.classList.remove('on'));
         btn.classList.add('on');
       }}
+      function syncParentQuery(lat, lon) {{
+        try {{
+          var url = new URL(window.parent.location.href);
+          url.searchParams.set('{MAP_PIN_LAT_PARAM}', lat.toFixed(6));
+          url.searchParams.set('{MAP_PIN_LON_PARAM}', lon.toFixed(6));
+          window.parent.location.href = url.toString();
+        }} catch (err) {{
+          console.warn('Could not sync map pin to Streamlit query params', err);
+        }}
+      }}
+      function renderTakeoff(lat, lon, label, detail) {{
+        if (takeoffMarker) {{
+          map.removeLayer(takeoffMarker);
+        }}
+        takeoffMarker = L.marker([lat, lon]).bindTooltip(
+          '<strong>' + label + '</strong><br>' + detail,
+          {{direction:'top'}}
+        ).addTo(map);
+      }}
       if (PTS.length > 0) {{
         var lls = PTS.map(p => [p.lat, p.lon]);
         // Path shadow + dashed line
         L.polyline(lls, {{color:'rgba(0,0,0,0.4)', weight:7, lineJoin:'round'}}).addTo(map);
         L.polyline(lls, {{color:'#3d9957', weight:2.8, dashArray:'9 6', opacity:0.95}}).addTo(map);
-        // Takeoff approach
-        var p0 = PTS[0];
-        var to = [p0.lat - 0.00018, p0.lon - 0.00018];
-        L.polyline([to, lls[0]], {{color:'rgba(255,255,255,0.8)', weight:1.5, dashArray:'3 5'}}).addTo(map);
-        // Takeoff marker
-        var toIcon = L.divIcon({{
-          html: '<div style="width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;"><svg width=10 height=10><polygon points=\'5,1 9,9 1,9\' fill=white/></svg></div>',
-          className:'', iconAnchor:[11,11]
-        }});
-        L.marker(to, {{icon:toIcon}}).bindTooltip('TAKEOFF', {{direction:'bottom'}}).addTo(map);
         // Numbered waypoint markers
         PTS.forEach(function(p) {{
           var ic = L.divIcon({{html:'<div class="wm">'+p.id+'</div>', className:'', iconAnchor:[13,13]}});
@@ -468,6 +701,13 @@ def _leaflet_map_html(points: list[Point], height: int = 400) -> str:
           L.marker([p.lat,p.lon], {{icon:ic}}).bindTooltip(tip, {{direction:'top'}}).addTo(map);
         }});
         map.fitBounds(L.latLngBounds(lls), {{padding:[48, 48]}});
+        if (TAKEOFF) {{
+          renderTakeoff(TAKEOFF.lat, TAKEOFF.lon, TAKEOFF.label, TAKEOFF.detail);
+        }}
+        map.on('click', function(evt) {{
+          renderTakeoff(evt.latlng.lat, evt.latlng.lng, 'Map pin', evt.latlng.lat.toFixed(5) + ', ' + evt.latlng.lng.toFixed(5));
+          syncParentQuery(evt.latlng.lat, evt.latlng.lng);
+        }});
       }} else {{
         map.setView([40.617,-96.179], 15);
       }}
@@ -526,8 +766,8 @@ def _sec(label: str, action: str | None = None) -> None:
     )
 
 
-def render_config(points: list[Point] | None) -> MissionConfig:
-    """Render config form in the sidebar; return a MissionConfig."""
+def render_config(points: list[Point] | None) -> tuple[MissionConfig, TakeoffReference]:
+    """Render config form in the sidebar; return mission config and takeoff summary."""
 
     _sec("Mission identity")
     mission_name = st.text_input(
@@ -603,35 +843,104 @@ def render_config(points: list[Point] | None) -> MissionConfig:
         value=False, key="terrain_follow",
     )
 
+    map_pin = get_map_pin_from_query()
     default_takeoff = 0.0
     erange = elevation_range(points) if points else None
     if erange is not None:
         default_takeoff = round(erange[0], 2)
-    takeoff_key = f"takeoff_elev::{default_takeoff:.2f}"
-    takeoff_elev = st.number_input(
-        "Takeoff elevation · AMSL (m)",
-        min_value=-500.0, max_value=9000.0,
-        value=default_takeoff, step=0.1,
-        key=takeoff_key,
-        help="Auto-filled from the minimum point elevation. Verify at nationalmap.gov.",
+    takeoff_source_labels = {
+        "automatic": "Automatic — lowest waypoint elevation",
+        "manual": "Manual elevation",
+        "waypoint": "Imported waypoint",
+        "map_pin": "Map pin",
+    }
+    takeoff_source_options = ["automatic", "manual"]
+    if points:
+        takeoff_source_options.append("waypoint")
+        takeoff_source_options.append("map_pin")
+    takeoff_source = st.selectbox(
+        "Takeoff reference",
+        takeoff_source_options,
+        format_func=takeoff_source_labels.get,
+        key="takeoff_source",
+        help=(
+            "Terrain-following uses this reference to compute heights. "
+            "Flat-field missions keep all waypoint heights constant."
+        ),
     )
-    if terrain_follow and erange is None:
-        st.warning("Terrain following needs per-point elevations in your file.")
+
+    selected_point_id: int | None = None
+    if takeoff_source == "waypoint" and points:
+        waypoint_options = {
+            f"WP {p.id} · {p.lat:.5f}, {p.lon:.5f}": p.id
+            for p in points
+        }
+        selected_label = st.selectbox(
+            "Takeoff waypoint",
+            list(waypoint_options),
+            key="takeoff_waypoint",
+        )
+        selected_point_id = waypoint_options[selected_label]
+
+    if takeoff_source == "map_pin":
+        if map_pin is None:
+            st.info("Click the map preview to place the takeoff pin.")
+        else:
+            st.caption(f"Map pin · {map_pin[0]:.5f}, {map_pin[1]:.5f}")
+            if st.button("Clear map pin", use_container_width=True, key="clear_map_pin"):
+                clear_map_pin_query()
+                st.rerun()
+
+    use_manual_override = takeoff_source == "manual"
+    if takeoff_source in {"waypoint", "map_pin"}:
+        use_manual_override = st.checkbox(
+            "Override takeoff elevation manually",
+            value=False,
+            key=f"manual_override::{takeoff_source}",
+        )
+
+    takeoff_elev: float | None = None
+    if use_manual_override:
+        takeoff_key = f"takeoff_elev::{default_takeoff:.2f}"
+        takeoff_elev = st.number_input(
+            "Takeoff elevation · AMSL (m)",
+            min_value=-500.0,
+            max_value=9000.0,
+            value=default_takeoff,
+            step=0.1,
+            key=takeoff_key,
+            help="Verify takeoff elevation with a trusted elevation source such as nationalmap.gov.",
+        )
+
+    takeoff_ref = resolve_takeoff_reference(
+        points or [],
+        terrain_follow=terrain_follow,
+        source_key=takeoff_source,
+        manual_elev=takeoff_elev,
+        selected_point_id=selected_point_id,
+        map_pin=map_pin,
+    )
+
+    if terrain_follow and takeoff_ref.elevation_m is None:
+        st.warning(takeoff_ref.validation)
+    else:
+        st.caption(takeoff_ref.validation)
 
     drone_str = "M3E" if drone_model.startswith("M4E") else drone_model.split(" ")[0]
-    return MissionConfig(
-        drone_model=drone_str,
-        pilot_name=pilot_name,
-        mission_name=mission_name,
-        agl_m=agl_m,
-        speed_mps=float(speed_mps),
-        hover_sec=float(hover_sec),
-        gimbal_pitch=float(gimbal_pitch),
-        heading_deg=float(heading_deg),
-        terrain_follow=terrain_follow,
-        takeoff_elevation_m=(
-            takeoff_elev if terrain_follow and takeoff_elev != 0.0 else None
+    return (
+        MissionConfig(
+            drone_model=drone_str,
+            pilot_name=pilot_name,
+            mission_name=mission_name,
+            agl_m=agl_m,
+            speed_mps=float(speed_mps),
+            hover_sec=float(hover_sec),
+            gimbal_pitch=float(gimbal_pitch),
+            heading_deg=float(heading_deg),
+            terrain_follow=terrain_follow,
+            takeoff_elevation_m=takeoff_ref.elevation_m if terrain_follow else None,
         ),
+        takeoff_ref,
     )
 
 
@@ -654,6 +963,7 @@ def _preflight_html(
     points: list[Point],
     config: MissionConfig,
     erange: tuple[float, float] | None,
+    takeoff_ref: TakeoffReference,
 ) -> str:
     rows: list[str] = []
     ok_count = 0
@@ -665,20 +975,23 @@ def _preflight_html(
         tone = "err"
         sub  = f"{agl_ft} ft AGL &mdash; exceeds 400 ft ceiling"
     else:
-        tone = "ok"; ok_count += 1
-        sub  = f"{agl_ft} ft AGL &middot; {margin_pct}% margin to 400 ft"
+        tone = "ok"
+        ok_count += 1
+        sub = f"{agl_ft} ft AGL &middot; {margin_pct}% margin to 400 ft"
     rows.append(_safety_row(tone, "FAA Part 107 ceiling", sub))
 
     # 2) Terrain clearance
     if erange is not None and config.terrain_follow:
         delta = erange[1] - erange[0]
         min_agl = config.agl_m - delta
-        tone = "ok" if min_agl > 10 else "warn"; ok_count += (1 if tone == "ok" else 0)
-        sub  = f"Min AGL {min_agl / FT_TO_M:.1f} ft over &Delta;{delta:.1f} m terrain"
+        tone = "ok" if min_agl > 10 else "warn"
+        ok_count += 1 if tone == "ok" else 0
+        sub = f"Min AGL {min_agl / FT_TO_M:.1f} ft over &Delta;{delta:.1f} m terrain"
     elif erange is not None:
         delta = erange[1] - erange[0]
-        tone  = "ok"; ok_count += 1
-        sub   = f"Flat AGL &middot; &Delta;{delta:.1f} m elevation spread"
+        tone = "ok"
+        ok_count += 1
+        sub = f"Flat AGL &middot; &Delta;{delta:.1f} m elevation spread"
     else:
         tone = "warn"
         sub  = "No per-point elevations &mdash; terrain unknown"
@@ -687,24 +1000,29 @@ def _preflight_html(
     # 3) Battery estimate — FIX: check >100 before >90 so neither branch is unreachable
     batt = battery_pct_estimate(points, config.speed_mps, config.hover_sec)
     if batt > 100:
-        tone = "err";  sub = f"~{batt}% &mdash; multi-battery mission required"
+        tone = "err"
+        sub = f"~{batt}% &mdash; multi-battery mission required"
     elif batt > 90:
-        tone = "warn"; sub = f"~{batt}% of a single M3M pack &mdash; consider splitting"
+        tone = "warn"
+        sub = f"~{batt}% of a single M3M pack &mdash; consider splitting"
     else:
-        tone = "ok"; ok_count += 1; sub = f"~{batt}% of a single M3M pack"
+        tone = "ok"
+        ok_count += 1
+        sub = f"~{batt}% of a single M3M pack"
     rows.append(_safety_row(tone, "Mission within battery", sub))
 
     # 4) Takeoff elevation source
-    if config.takeoff_elevation_m is not None:
-        tone = "ok"; ok_count += 1
-        sub  = f"Manual &middot; {config.takeoff_elevation_m:.1f} m AMSL"
-    elif erange is not None:
+    if takeoff_ref.elevation_m is not None and takeoff_ref.source_key != "automatic":
+        tone = "ok"
+        ok_count += 1
+        sub = takeoff_ref.detail
+    elif takeoff_ref.elevation_m is not None and erange is not None:
         tone = "warn"
-        sub  = f"Auto &middot; min point elevation {erange[0]:.1f} m &mdash; verify on nationalmap.gov"
+        sub = f"{takeoff_ref.detail} &mdash; verify on nationalmap.gov"
     else:
         tone = "warn"
-        sub  = "Auto &middot; verify takeoff elevation at nationalmap.gov"
-    rows.append(_safety_row(tone, "Takeoff elevation source", sub))
+        sub = takeoff_ref.validation
+    rows.append(_safety_row(tone, "Takeoff reference", sub))
 
     total = len(rows)
     badge_cls = "wpt-badge-ok" if ok_count == total else "wpt-badge-warn"
@@ -721,8 +1039,9 @@ def _preflight_html(
 def _output_card_html(
     points: list[Point] | None,
     config: MissionConfig | None,
+    takeoff_ref: TakeoffReference | None,
 ) -> str:
-    if points is None or config is None:
+    if points is None or config is None or takeoff_ref is None:
         return (
             '<div class="wpt-card">'
             '<div class="wpt-card-title">Output</div>'
@@ -736,11 +1055,30 @@ def _output_card_html(
     rows = (
         f'<div class="wpt-kv"><span>Format</span><span>DJI Pilot 2 KMZ</span></div>'
         f'<div class="wpt-kv"><span>File name</span><span>{fname}</span></div>'
+        f'<div class="wpt-kv"><span>Mode</span><span>{mission_mode_label(config.terrain_follow)}</span></div>'
+        f'<div class="wpt-kv"><span>Takeoff ref</span><span>{takeoff_ref.source_label}</span></div>'
         f'<div class="wpt-kv"><span>Encoded as</span><span>{drone_enc}</span></div>'
         f'<div class="wpt-kv"><span>Waypoints</span><span>{len(points)}</span></div>'
         f'<div class="wpt-kv"><span>Est. size</span><span>~{est_kb} KB</span></div>'
     )
     return f'<div class="wpt-card"><div class="wpt-card-title">Output</div>{rows}</div>'
+
+
+def _mission_summary_html(
+    points: list[Point],
+    config: MissionConfig,
+    takeoff_ref: TakeoffReference,
+) -> str:
+    erange = elevation_range(points)
+    terrain_data = "Per-point elevation present" if erange is not None else "No per-point elevation"
+    rows = (
+        f'<div class="wpt-kv"><span>Mission mode</span><span>{mission_mode_label(config.terrain_follow)}</span></div>'
+        f'<div class="wpt-kv"><span>Mode detail</span><span>{mission_mode_description(config.terrain_follow)}</span></div>'
+        f'<div class="wpt-kv"><span>Takeoff source</span><span>{takeoff_ref.source_label}</span></div>'
+        f'<div class="wpt-kv"><span>Takeoff detail</span><span>{takeoff_ref.detail}</span></div>'
+        f'<div class="wpt-kv"><span>Terrain data</span><span>{terrain_data}</span></div>'
+    )
+    return f'<div class="wpt-card"><div class="wpt-card-title">Mission mode</div>{rows}</div>'
 
 
 # ── Metrics strip ─────────────────────────────────────────────────────────────
@@ -810,7 +1148,7 @@ def main() -> None:
 
     # ── Sidebar config ──────────────────────────────────────────────────────
     with st.sidebar:
-        config = render_config(points if points else None)
+        config, takeoff_ref = render_config(points if points else None)
 
         st.markdown('<hr class="wpt-divider"/>', unsafe_allow_html=True)
         with st.expander("About"):
@@ -843,6 +1181,7 @@ def main() -> None:
         with btn_col:
             if st.button("Sample data", use_container_width=True,
                          help="Load the 6-point demo CSV."):
+                clear_map_pin_query()
                 st.session_state["use_sample"] = True
                 st.session_state["src_path"]   = SAMPLE_PATH if SAMPLE_PATH.exists() else None
                 st.session_state["src_name"]   = SAMPLE_PATH.name if SAMPLE_PATH.exists() else None
@@ -853,6 +1192,7 @@ def main() -> None:
             tmp = Path(tempfile.gettempdir()) / "_dji_upload"
             tmp.mkdir(exist_ok=True)
             try:
+                clear_map_pin_query()
                 saved = _save_upload(tmp, uploaded)
                 st.session_state["src_path"]   = saved
                 st.session_state["src_name"]   = uploaded.name
@@ -867,6 +1207,10 @@ def main() -> None:
             except Exception as exc:
                 st.error(f"Could not stage upload: {exc}")
         st.markdown('</div>', unsafe_allow_html=True)
+        st.caption(
+            "Upload CSV, KML, GeoJSON, or a zipped Shapefile "
+            "(.zip with .shp + .shx + .dbf + .prj)."
+        )
 
         # File pill (shown after a file is loaded)
         src_name = st.session_state.get("src_name")
@@ -883,6 +1227,10 @@ def main() -> None:
                 + '</span></div>'
             )
             st.markdown(pill, unsafe_allow_html=True)
+            st.markdown(
+                _mission_summary_html(points, config, takeoff_ref),
+                unsafe_allow_html=True,
+            )
 
         # Load error
         if load_error:
@@ -890,7 +1238,7 @@ def main() -> None:
 
         # ── Map ─────────────────────────────────────────────────────────────
         if points:
-            map_html = _leaflet_map_html(points, height=420)
+            map_html = _leaflet_map_html(points, takeoff_ref=takeoff_ref, height=420)
             components.html(map_html, height=420, scrolling=False)
 
             # Metrics strip
@@ -929,9 +1277,14 @@ def main() -> None:
         if points:
             erange = elevation_range(points)
 
+            st.markdown(
+                _mission_summary_html(points, config, takeoff_ref),
+                unsafe_allow_html=True,
+            )
+
             # Pre-flight check card
             st.markdown(
-                _preflight_html(points, config, erange),
+                _preflight_html(points, config, erange, takeoff_ref),
                 unsafe_allow_html=True,
             )
 
@@ -939,7 +1292,7 @@ def main() -> None:
             result = st.session_state.get("result")
             if not result:
                 st.markdown(
-                    _output_card_html(points, config),
+                    _output_card_html(points, config, takeoff_ref),
                     unsafe_allow_html=True,
                 )
 
@@ -975,7 +1328,9 @@ def main() -> None:
                 )
             else:
                 st.success(
-                    f"Built `{result['file_name']}` with {result['n_points']} waypoint(s)."
+                    f"Built `{result['file_name']}` with {result['n_points']} waypoint(s) "
+                    f"in {mission_mode_label(config.terrain_follow).lower()} mode "
+                    f"using {takeoff_ref.source_label.lower()}."
                 )
                 st.download_button(
                     "\u2b07\ufe0f  Download KMZ",
@@ -996,18 +1351,18 @@ def main() -> None:
         else:
             # No file loaded — show placeholder cards
             st.markdown(
-                _output_card_html(None, None),
+                _output_card_html(None, None, None),
                 unsafe_allow_html=True,
             )
 
         # About card
         st.markdown(
-            f'<div class="wpt-about">'
-            f'<div class="wpt-about-label">About</div>'
-            f'<div class="wpt-about-body">'
-            f'Built by <strong>Mailson Freire de Oliveira</strong>, '
-            f'Water &amp; Cropping Systems Extension, UNL IANR. '
-            f'MIT licensed &mdash; please cite in scientific work.</div></div>',
+            '<div class="wpt-about">'
+            '<div class="wpt-about-label">About</div>'
+            '<div class="wpt-about-body">'
+            'Built by <strong>Mailson Freire de Oliveira</strong>, '
+            'Water &amp; Cropping Systems Extension, UNL IANR. '
+            'MIT licensed &mdash; please cite in scientific work.</div></div>',
             unsafe_allow_html=True,
         )
 
