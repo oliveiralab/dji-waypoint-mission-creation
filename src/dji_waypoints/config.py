@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 FT_TO_M = 0.3048
 
 
@@ -38,6 +37,6 @@ class MissionConfig:
     takeoff_elevation_m: float | None = None
 
     @classmethod
-    def from_ft(cls, agl_ft: float, **kwargs) -> "MissionConfig":
+    def from_ft(cls, agl_ft: float, **kwargs) -> MissionConfig:
         """Convenience: build a config using feet for AGL."""
         return cls(agl_m=agl_ft * FT_TO_M, **kwargs)
