@@ -8,8 +8,13 @@ from __future__ import annotations
 import csv
 import json
 import re
+import warnings
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+
+# DJI Pilot 2 maximum waypoint count.
+MAX_WAYPOINTS = 65535
 
 
 @dataclass
@@ -142,10 +147,90 @@ def read_csv(path: Path) -> list[Point]:
     return points
 
 
+# --- KMZ (zipped KML) --------------------------------------------------------
+
+def read_kmz(path: Path) -> list[Point]:
+    """Extract the first .kml inside a .kmz archive and parse it."""
+    with zipfile.ZipFile(path, "r") as zf:
+        kml_names = [n for n in zf.namelist() if n.lower().endswith(".kml")]
+        if not kml_names:
+            raise ValueError(f"No .kml file found inside {path}")
+        kml_text = zf.read(kml_names[0]).decode("utf-8")
+    # Parse the in-memory KML text directly.
+    points: list[Point] = []
+    for body in _PLACEMARK_RE.findall(kml_text):
+        coord_m = _COORD_RE.search(body)
+        if not coord_m:
+            continue
+        id_m = _ID_RE.search(body)
+        elev_m = _ELEV_RE.search(body)
+        pid = int(float(id_m.group(1))) if id_m else len(points) + 1
+        lon = float(coord_m.group(1))
+        lat = float(coord_m.group(2))
+        if elev_m:
+            elev: float | None = float(elev_m.group(1))
+        elif coord_m.group(3):
+            elev = float(coord_m.group(3))
+        else:
+            elev = None
+        points.append(Point(pid, lat, lon, elev))
+    return points
+
+
+# --- Validation --------------------------------------------------------------
+
+def validate_points(points: list[Point]) -> list[Point]:
+    """Validate a list of points: bounds, duplicates, and max count.
+
+    Raises
+    ------
+    ValueError
+        If any coordinate is out of WGS-84 bounds or point count exceeds
+        the DJI Pilot 2 limit.
+
+    Warns (UserWarning)
+        If duplicate coordinates are detected.
+    """
+    if len(points) > MAX_WAYPOINTS:
+        raise ValueError(
+            f"Too many waypoints ({len(points):,}). "
+            f"DJI Pilot 2 supports at most {MAX_WAYPOINTS:,}."
+        )
+
+    for p in points:
+        if not (-90.0 <= p.lat <= 90.0):
+            raise ValueError(
+                f"Point {p.id}: latitude {p.lat} is out of range [-90, 90]."
+            )
+        if not (-180.0 <= p.lon <= 180.0):
+            raise ValueError(
+                f"Point {p.id}: longitude {p.lon} is out of range [-180, 180]."
+            )
+
+    seen: set[tuple[float, float]] = set()
+    duplicates: list[int] = []
+    for p in points:
+        coord = (p.lat, p.lon)
+        if coord in seen:
+            duplicates.append(p.id)
+        else:
+            seen.add(coord)
+
+    if duplicates:
+        warnings.warn(
+            f"Duplicate coordinates detected at point(s): {duplicates}. "
+            "This may indicate a data error.",
+            stacklevel=2,
+        )
+
+    return points
+
+
 # --- Dispatcher --------------------------------------------------------------
 
 _READERS = {
     ".kml": read_kml,
+    ".kmz": read_kmz,
     ".shp": read_shapefile,
     ".geojson": read_geojson,
     ".json": read_geojson,
@@ -154,7 +239,11 @@ _READERS = {
 
 
 def load_points(path: str | Path) -> list[Point]:
-    """Load points from any supported file type, dispatched by extension."""
+    """Load points from any supported file type, dispatched by extension.
+
+    Validates coordinates, checks for duplicates, and enforces the DJI
+    waypoint count limit.
+    """
     p = Path(path)
     ext = p.suffix.lower()
     if ext not in _READERS:
@@ -162,4 +251,5 @@ def load_points(path: str | Path) -> list[Point]:
             f"Unsupported input format '{ext}'. "
             f"Supported: {sorted(_READERS.keys())}"
         )
-    return _READERS[ext](p)
+    points = _READERS[ext](p)
+    return validate_points(points)

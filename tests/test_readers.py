@@ -7,7 +7,6 @@ import pytest
 
 from dji_waypoints.readers import load_points, read_csv, read_geojson, read_kml
 
-
 REPO = Path(__file__).resolve().parents[1]
 SAMPLE_CSV = REPO / "examples" / "sample_points.csv"
 

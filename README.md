@@ -16,7 +16,8 @@ Designed for precision-agriculture and research workflows — stand counting, gr
 ## Features
 
 - **No-code web app** — upload points, fill a form, download a KMZ ([screenshot below](#web-app-no-code))
-- **Multiple input formats**: KML, Shapefile (`.shp`), GeoJSON, CSV
+- **Multiple input formats**: KML, KMZ, Shapefile (`.shp`), GeoJSON, CSV
+- **Input validation**: coordinate bounds checking, duplicate detection, waypoint limit enforcement
 - **Terrain following**: constant AGL above local ground (constant GSD)
 - **Flat-field mode**: constant height above takeoff (no elevation data needed)
 - **Configurable photography**: any gimbal pitch, hover duration, heading, speed
@@ -84,6 +85,14 @@ dji-mission build points.csv --out mission.kmz --speed 4 --hover 3
 
 Run `dji-mission build --help` for the full option list.
 
+### Inspect a generated mission
+
+```bash
+dji-mission inspect mission.kmz
+```
+
+Prints a summary: file size, number of waypoints, and bounding box.
+
 ---
 
 ## Quick start — Python API
@@ -115,6 +124,7 @@ A runnable example is in [examples/build_from_csv.py](examples/build_from_csv.py
 |--------|-----------|-------|
 | CSV | `.csv` | Columns: `id` (optional), `lat`, `lon`, `elevation` (optional). Aliases accepted (`latitude`, `lng`, `z`, etc.). |
 | KML | `.kml` | QGIS exports with `<SimpleData name="elevation">` work out of the box. |
+| KMZ | `.kmz` | Zipped KML — the first `.kml` inside the archive is parsed. |
 | Shapefile | `.shp` | Must be WGS-84 (EPSG:4326). Reads `id` and `elevation`/`elev`/`z` fields if present. |
 | GeoJSON | `.geojson`, `.json` | Point features, WGS-84. Elevation from `coordinates[2]` or `properties.elevation`. |
 
@@ -172,7 +182,7 @@ All knobs available on `MissionConfig` (and the CLI):
 
 ## Legacy scripts
 
-The original task-specific scripts (`convert_to_dji.py`, `convert_to_dji_m4e_50ft.py`, `convert_to_dji_m3m_30ft_brucetest22.py`) still live at the repo root for reference. New users should prefer the package and CLI.
+The original task-specific scripts (`convert_to_dji.py`, `convert_to_dji_m4e_50ft.py`, `convert_to_dji_m3m_30ft_brucetest22.py`) have been moved to the `archive/` directory for reference. New users should prefer the package and CLI.
 
 ---
 
