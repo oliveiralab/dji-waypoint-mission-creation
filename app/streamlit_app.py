@@ -513,10 +513,14 @@ button[data-testid="stSidebarCollapsedControl"] {
 /* Radio (unit) */
 .stRadio [data-baseweb="radio"] div { border-color: #3d9957 !important; }
 .stRadio [data-baseweb="radio"][aria-checked="true"] div { background: #3d9957 !important; }
-/* Checkbox */
-[data-baseweb="checkbox"] span {
+/* Checkbox — only style checked state */
+[data-baseweb="checkbox"][aria-checked="true"] span {
   background-color: #3d9957 !important;
   border-color: #3d9957 !important;
+}
+[data-baseweb="checkbox"][aria-checked="false"] span {
+  background-color: white !important;
+  border-color: #e0e8d8 !important;
 }
 /* Primary button */
 .stButton > button[kind="primary"] {
@@ -1192,23 +1196,30 @@ def main() -> None:
                 st.rerun()
 
         if uploaded is not None:
-            tmp = Path(tempfile.gettempdir()) / "_dji_upload"
-            tmp.mkdir(exist_ok=True)
-            try:
-                clear_map_pin_query()
-                saved = _save_upload(tmp, uploaded)
-                st.session_state["src_path"]   = saved
-                st.session_state["src_name"]   = uploaded.name
-                st.session_state["use_sample"] = False
-                st.session_state.pop("result", None)
-                src_path = saved
+            # Only process the upload once (avoid re-processing on every rerun
+            # which would clear state and interfere with config editing).
+            already_loaded = (
+                st.session_state.get("src_name") == uploaded.name
+                and not st.session_state.get("use_sample", False)
+            )
+            if not already_loaded:
+                tmp = Path(tempfile.gettempdir()) / "_dji_upload"
+                tmp.mkdir(exist_ok=True)
                 try:
-                    points = load_points(src_path)
-                    load_error = None
+                    clear_map_pin_query()
+                    saved = _save_upload(tmp, uploaded)
+                    st.session_state["src_path"]   = saved
+                    st.session_state["src_name"]   = uploaded.name
+                    st.session_state["use_sample"] = False
+                    st.session_state.pop("result", None)
+                    src_path = saved
+                    try:
+                        points = load_points(src_path)
+                        load_error = None
+                    except Exception as exc:
+                        load_error = str(exc)
                 except Exception as exc:
-                    load_error = str(exc)
-            except Exception as exc:
-                st.error(f"Could not stage upload: {exc}")
+                    st.error(f"Could not stage upload: {exc}")
         st.markdown('</div>', unsafe_allow_html=True)
         st.caption(
             "Upload CSV, KML, GeoJSON, or a zipped Shapefile "
