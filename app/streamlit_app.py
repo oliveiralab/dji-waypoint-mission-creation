@@ -325,9 +325,12 @@ footer { display: none !important; }
 [data-testid="stSidebar"] > div:first-child { background: #fafbf7 !important; }
 [data-testid="stSidebarContent"] { padding: 20px 18px 32px !important; }
 [data-testid="stSidebarUserContent"] { padding: 0 !important; }
-button[data-testid="stSidebarCollapsedControl"],
 [data-testid="stSidebarNavSeparator"] { display: none !important; }
 [data-testid="stSidebarNav"] { display: none !important; }
+button[data-testid="stSidebarCollapsedControl"] {
+  display: inline-flex !important;
+  border-radius: 8px !important;
+}
 
 /* ── Section labels ── */
 .wpt-sec {
