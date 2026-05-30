@@ -67,3 +67,47 @@ def test_elevation_range():
     assert streamlit_app.elevation_range(pts) == (95.0, 110.0)
     assert streamlit_app.elevation_range([Point(1, 0, 0, None)]) is None
     assert streamlit_app.elevation_range([]) is None
+
+
+def test_mission_mode_label():
+    assert streamlit_app.mission_mode_label(True) == "Terrain following"
+    assert streamlit_app.mission_mode_label(False) == "Flat-field"
+
+
+def test_resolve_takeoff_reference_automatic_terrain_follow():
+    pts = [Point(1, 40.0, -96.0, 102.0), Point(2, 40.1, -96.1, 97.5)]
+    ref = streamlit_app.resolve_takeoff_reference(
+        pts,
+        terrain_follow=True,
+        source_key="automatic",
+    )
+    assert ref.source_label == "Automatic"
+    assert ref.elevation_m == 97.5
+    assert "lowest waypoint elevation" in ref.validation.lower()
+
+
+def test_resolve_takeoff_reference_waypoint_uses_selected_point():
+    pts = [Point(1, 40.0, -96.0, 102.0), Point(2, 40.1, -96.1, 97.5)]
+    ref = streamlit_app.resolve_takeoff_reference(
+        pts,
+        terrain_follow=True,
+        source_key="waypoint",
+        selected_point_id=1,
+    )
+    assert ref.source_label == "Imported waypoint"
+    assert ref.elevation_m == 102.0
+    assert ref.lat == 40.0
+    assert ref.lon == -96.0
+
+
+def test_resolve_takeoff_reference_map_pin_uses_nearest_point_elevation():
+    pts = [Point(1, 40.0, -96.0, 102.0), Point(2, 40.1, -96.1, 97.5)]
+    ref = streamlit_app.resolve_takeoff_reference(
+        pts,
+        terrain_follow=True,
+        source_key="map_pin",
+        map_pin=(40.099, -96.101),
+    )
+    assert ref.source_label == "Map pin"
+    assert ref.elevation_m == 97.5
+    assert "nearest wp 2" in ref.detail.lower()
