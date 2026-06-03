@@ -20,7 +20,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pydeck as pdk
 
-from dji_waypoints import MissionConfig, build_mission, load_points
+from dji_waypoints import MissionConfig, build_mission, fetch_elevations, load_points
 from dji_waypoints.config import FT_TO_M
 from dji_waypoints.readers import Point
 
@@ -510,6 +510,24 @@ def render_sidebar(points: list[Point] | None) -> MissionConfig:
             "Terrain following needs per-point elevations in your input. "
             "Current file has none."
         )
+        if points and st.sidebar.button(
+            "Fetch elevations from OpenTopoData",
+            key="fetch_elevations",
+        ):
+            with st.spinner("Looking up missing elevations..."):
+                try:
+                    points = fetch_elevations(points)
+                    erange = elevation_range(points)
+                    if erange is not None:
+                        default_takeoff = round(erange[0], 2)
+                        takeoff_elev = default_takeoff
+                        st.sidebar.success("Elevation lookup complete.")
+                    else:
+                        st.sidebar.error(
+                            "Elevation lookup completed but returned no point elevations."
+                        )
+                except Exception as exc:
+                    st.sidebar.error(f"Elevation lookup failed: {exc}")
 
     drone_str = "M3E" if drone_model.startswith("M4E") else drone_model
 

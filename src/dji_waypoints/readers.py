@@ -8,6 +8,8 @@ from __future__ import annotations
 import csv
 import json
 import re
+import urllib.parse
+import urllib.request
 import warnings
 import zipfile
 from dataclasses import dataclass
@@ -236,6 +238,58 @@ _READERS = {
     ".json": read_geojson,
     ".csv": read_csv,
 }
+
+
+def _chunked(items: list[Point], size: int) -> list[list[Point]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def fetch_elevations(points: list[Point], source: str = "srtm90m") -> list[Point]:
+    """Populate missing point elevations using OpenTopoData.
+
+    This is useful for terrain-following missions when the input points
+    do not already carry elevation values.
+    """
+    sources = {"srtm90m", "aster30m", "worlddem"}
+    if source not in sources:
+        raise ValueError(
+            f"Unsupported elevation source '{source}'. Supported: {sorted(sources)}"
+        )
+
+    missing = [p for p in points if p.elevation_m is None]
+    if not missing:
+        return points
+
+    base_url = f"https://api.opentopodata.org/v1/{source}"
+    for batch in _chunked(missing, 50):
+        locations = "|".join(f"{p.lat},{p.lon}" for p in batch)
+        url = f"{base_url}?locations={urllib.parse.quote(locations)}"
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": "dji-waypoints/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.load(response)
+
+        status = data.get("status")
+        if status != "OK":
+            raise ValueError(
+                f"Elevation lookup failed: {status} - {data.get('error', 'unknown')}"
+            )
+
+        results = data.get("results", [])
+        if len(results) != len(batch):
+            raise ValueError(
+                "Elevation lookup returned a different number of results than requested."
+            )
+
+        for p, result in zip(batch, results):
+            if result.get("status") == "OK":
+                elev = result.get("elevation")
+                if elev is not None:
+                    p.elevation_m = float(elev)
+
+    return points
 
 
 def load_points(path: str | Path) -> list[Point]:
