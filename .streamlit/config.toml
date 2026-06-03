@@ -1,14 +1,15 @@
 [server]
-# Allow zipped shapefile bundles up to 50 MB.
+# Allow zipped shapefile bundles up to 50 MB (default is 200 MB; trim for safety).
 maxUploadSize = 50
 
 [browser]
 gatherUsageStats = false
 
+# Sage palette from the handoff design (oklch values approximated in hex).
 [theme]
-base = "light"
-primaryColor      = "#3d9957"
-backgroundColor   = "#f7f9f4"
-secondaryBackgroundColor = "#fafbf7"
-textColor         = "#1c2a22"
-font              = "sans serif"
+base                = "light"
+primaryColor        = "#5b8a5a"
+backgroundColor     = "#f8f7f3"
+secondaryBackgroundColor = "#fbfaf6"
+textColor           = "#1c2a22"
+font                = "sans serif"
