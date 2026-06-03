@@ -897,7 +897,7 @@ def main() -> None:
         layout="wide",
     )
 
-    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    components.html(CUSTOM_CSS, height=0)
     render_brand_bar()
 
     # Upload first so the sidebar can use loaded points (for default takeoff).
