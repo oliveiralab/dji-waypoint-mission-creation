@@ -284,10 +284,11 @@ def fetch_elevations(points: list[Point], source: str = "srtm90m") -> list[Point
             )
 
         for p, result in zip(batch, results):
-            if result.get("status") == "OK":
-                elev = result.get("elevation")
-                if elev is not None:
-                    p.elevation_m = float(elev)
+            # Individual results from OpenTopoData carry no "status" field;
+            # only the top-level response does.  Just check the value.
+            elev = result.get("elevation")
+            if elev is not None:
+                p.elevation_m = float(elev)
 
     return points
 

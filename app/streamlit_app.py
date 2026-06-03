@@ -14,8 +14,6 @@ import html
 import json
 import math
 import tempfile
-import urllib.parse
-import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -25,55 +23,11 @@ import pydeck as pdk
 
 from dji_waypoints import MissionConfig, build_mission, load_points
 from dji_waypoints.config import FT_TO_M
-from dji_waypoints.readers import Point
+from dji_waypoints.readers import Point, fetch_elevations
 
 
 def _chunked(items: list[Point], size: int) -> list[list[Point]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
-
-
-def fetch_elevations(points: list[Point], source: str = "srtm90m") -> list[Point]:
-    """Populate missing point elevations using OpenTopoData."""
-    sources = {"srtm90m", "aster30m", "worlddem"}
-    if source not in sources:
-        raise ValueError(
-            f"Unsupported elevation source '{source}'. Supported: {sorted(sources)}"
-        )
-
-    missing = [p for p in points if p.elevation_m is None]
-    if not missing:
-        return points
-
-    base_url = f"https://api.opentopodata.org/v1/{source}"
-
-    for batch in _chunked(missing, 50):
-        locations = "|".join(f"{p.lat},{p.lon}" for p in batch)
-        url = f"{base_url}?locations={urllib.parse.quote(locations)}"
-        request = urllib.request.Request(
-            url,
-            headers={"User-Agent": "dji-waypoints/1.0"},
-        )
-        with urllib.request.urlopen(request, timeout=30) as response:
-            data = json.load(response)
-
-        if data.get("status") != "OK":
-            raise ValueError(
-                f"Elevation lookup failed: {data.get('status')} - {data.get('error', 'unknown')}"
-            )
-
-        results = data.get("results", [])
-        if len(results) != len(batch):
-            raise ValueError(
-                "Elevation lookup returned a different number of results than requested."
-            )
-
-        for p, result in zip(batch, results):
-            if result.get("status") == "OK":
-                elev = result.get("elevation")
-                if elev is not None:
-                    p.elevation_m = float(elev)
-
-    return points
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +399,7 @@ def render_brand_bar() -> None:
 # Sidebar — mission configuration
 # ---------------------------------------------------------------------------
 
-def render_sidebar(points: list[Point] | None) -> MissionConfig:
+def render_sidebar(points: list[Point] | None, elev_cache_key: str = "") -> MissionConfig:
     st.sidebar.markdown(
         "<div class='section-label' style='margin-top:0'>Mission identity</div>",
         unsafe_allow_html=True,
@@ -536,50 +490,97 @@ def render_sidebar(points: list[Point] | None) -> MissionConfig:
         value=False,
         help=(
             "Keeps AGL constant above local ground. Needs per-point elevations "
-            "in the input AND a takeoff elevation."
+            "in the input AND a takeoff point / elevation."
         ),
         key="terrain_follow",
     )
 
-    default_takeoff = 0.0
     erange = elevation_range(points) if points else None
-    if erange is not None:
-        default_takeoff = round(erange[0], 2)
-    takeoff_key = f"takeoff_elev::{default_takeoff:.2f}"
-    takeoff_elev = st.sidebar.number_input(
-        "Takeoff elevation, AMSL (m)",
-        min_value=-500.0, max_value=9000.0,
-        value=default_takeoff, step=0.1,
-        help=(
-            "Only used when terrain following is on. Auto-filled from the "
-            "minimum elevation in your points. Look up your spot at "
-            "https://apps.nationalmap.gov/elevation/"
-        ),
-        key=takeoff_key,
-    )
-    if terrain_follow and erange is None:
-        st.sidebar.warning(
-            "Terrain following needs per-point elevations in your input. "
-            "Current file has none."
+    # Waypoints that carry an elevation value (needed for takeoff selector).
+    elev_pts = [p for p in (points or []) if p.elevation_m is not None]
+
+    if terrain_follow:
+        if elev_pts:
+            # ── Takeoff point selector ──────────────────────────────────────
+            pt_labels = [
+                f"Pt {p.id}  —  {p.elevation_m:.1f} m  ({p.lat:.5f}, {p.lon:.5f})"
+                for p in elev_pts
+            ]
+            sel_options = ["Manual entry"] + pt_labels
+            takeoff_sel = st.sidebar.selectbox(
+                "Takeoff point",
+                sel_options,
+                index=0,
+                key="takeoff_point_sel",
+                help=(
+                    "Select the waypoint nearest your takeoff location. "
+                    "Its ground elevation will be used as the flight reference datum."
+                ),
+            )
+            if takeoff_sel != "Manual entry":
+                sel_idx = sel_options.index(takeoff_sel) - 1  # offset for "Manual entry"
+                takeoff_elev: float = elev_pts[sel_idx].elevation_m  # type: ignore[assignment]
+                st.sidebar.caption(f"Takeoff datum: **{takeoff_elev:.2f} m** AMSL")
+            else:
+                default_takeoff = round(erange[0], 2) if erange else 0.0
+                takeoff_elev = st.sidebar.number_input(
+                    "Takeoff elevation, AMSL (m)",
+                    min_value=-500.0, max_value=9000.0,
+                    value=default_takeoff, step=0.1,
+                    help=(
+                        "AMSL elevation of your takeoff spot. "
+                        "Look it up at https://apps.nationalmap.gov/elevation/"
+                    ),
+                    key=f"takeoff_elev_manual::{default_takeoff:.2f}",
+                )
+        else:
+            # ── No elevations yet — offer to fetch them ──────────────────────
+            st.sidebar.warning(
+                "Terrain following needs per-point elevations in your input. "
+                "Current file has none."
+            )
+            if points and st.sidebar.button(
+                "Fetch elevations from OpenTopoData",
+                key="fetch_elevations",
+            ):
+                with st.spinner("Looking up missing elevations…"):
+                    try:
+                        updated = fetch_elevations(list(points))
+                        fetched = {
+                            p.id: p.elevation_m
+                            for p in updated
+                            if p.elevation_m is not None
+                        }
+                        if fetched and elev_cache_key:
+                            st.session_state[elev_cache_key] = fetched
+                            st.rerun()
+                        elif fetched:
+                            # Fallback: mutate in place when no cache key given.
+                            for p in points:
+                                if p.id in fetched:
+                                    p.elevation_m = fetched[p.id]
+                            st.rerun()
+                        else:
+                            st.sidebar.error(
+                                "Elevation lookup completed but returned no point elevations."
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        st.sidebar.error(f"Elevation lookup failed: {exc}")
+            takeoff_elev = 0.0  # placeholder; mission build will raise if no per-point elevs
+    else:
+        # ── Terrain following off — show elevation input for reference ───────
+        default_takeoff = round(erange[0], 2) if erange else 0.0
+        takeoff_elev = st.sidebar.number_input(
+            "Takeoff elevation, AMSL (m)",
+            min_value=-500.0, max_value=9000.0,
+            value=default_takeoff, step=0.1,
+            help=(
+                "Only used when terrain following is on. Auto-filled from the "
+                "minimum elevation in your points. Look up your spot at "
+                "https://apps.nationalmap.gov/elevation/"
+            ),
+            key=f"takeoff_elev::{default_takeoff:.2f}",
         )
-        if points and st.sidebar.button(
-            "Fetch elevations from OpenTopoData",
-            key="fetch_elevations",
-        ):
-            with st.spinner("Looking up missing elevations..."):
-                try:
-                    points = fetch_elevations(points)
-                    erange = elevation_range(points)
-                    if erange is not None:
-                        default_takeoff = round(erange[0], 2)
-                        takeoff_elev = default_takeoff
-                        st.sidebar.success("Elevation lookup complete.")
-                    else:
-                        st.sidebar.error(
-                            "Elevation lookup completed but returned no point elevations."
-                        )
-                except Exception as exc:
-                    st.sidebar.error(f"Elevation lookup failed: {exc}")
 
     drone_str = "M3E" if drone_model.startswith("M4E") else drone_model
 
@@ -593,9 +594,7 @@ def render_sidebar(points: list[Point] | None) -> MissionConfig:
         gimbal_pitch=float(gimbal_pitch),
         heading_deg=float(heading_deg),
         terrain_follow=terrain_follow,
-        takeoff_elevation_m=(
-            takeoff_elev if terrain_follow and takeoff_elev != 0.0 else None
-        ),
+        takeoff_elevation_m=takeoff_elev if terrain_follow else None,
     )
 
 
@@ -1011,13 +1010,21 @@ def main() -> None:
 
     points: list[Point] = []
     load_error: str | None = None
+    elev_cache_key = ""
     if src_path is not None:
+        elev_cache_key = f"fetched_elevations::{src_path.name}"
         try:
             points = load_points(src_path)
+            # Apply any previously-fetched elevations so they survive reruns.
+            cached = st.session_state.get(elev_cache_key, {})
+            if cached:
+                for p in points:
+                    if p.elevation_m is None and p.id in cached:
+                        p.elevation_m = cached[p.id]
         except Exception as exc:  # noqa: BLE001
             load_error = f"Could not read `{src_path.name}`: {exc}"
 
-    config = render_sidebar(points if points else None)
+    config = render_sidebar(points if points else None, elev_cache_key=elev_cache_key)
     agl_unit = st.session_state.get("agl_unit", "feet")
 
     if load_error:
