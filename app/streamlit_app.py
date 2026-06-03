@@ -18,6 +18,7 @@ from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
+import pydeck as pdk
 
 from dji_waypoints import MissionConfig, build_mission, load_points
 from dji_waypoints.config import FT_TO_M
@@ -599,14 +600,38 @@ def render_file_bar(src_path: Path, points: list[Point]) -> None:
 
 
 def render_map(points: list[Point]) -> None:
+    if not points:
+        st.info("Upload a file to preview the mission points on the map.")
+        return
+
     try:
-        st.map(
+        avg_lat = sum(p.lat for p in points) / len(points)
+        avg_lon = sum(p.lon for p in points) / len(points)
+
+        layer = pdk.Layer(
+            "ScatterplotLayer",
             data=[{"lat": p.lat, "lon": p.lon} for p in points],
-            zoom=14,
-            color="#5b8a5a",
-            size=12,
-            width="stretch",
+            get_position="[lon, lat]",
+            get_fill_color=[91, 138, 90, 180],
+            get_radius=30,
+            radius_min_pixels=3,
+            radius_max_pixels=6,
         )
+
+        view_state = pdk.ViewState(
+            latitude=avg_lat,
+            longitude=avg_lon,
+            zoom=14,
+            pitch=0,
+        )
+
+        deck = pdk.Deck(
+            map_style="mapbox://styles/mapbox/satellite-v9",
+            initial_view_state=view_state,
+            layers=[layer],
+        )
+
+        st.pydeck_chart(deck, use_container_width=True)
     except Exception as exc:  # noqa: BLE001 - map is non-critical preview
         st.caption(f"Map preview unavailable ({exc.__class__.__name__}).")
 
