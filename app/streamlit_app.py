@@ -20,7 +20,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pydeck as pdk
 
-from dji_waypoints import MissionConfig, build_mission, fetch_elevations, load_points
+from dji_waypoints import MissionConfig, build_mission, load_points
+from dji_waypoints.readers import fetch_elevations
 from dji_waypoints.config import FT_TO_M
 from dji_waypoints.readers import Point
 
