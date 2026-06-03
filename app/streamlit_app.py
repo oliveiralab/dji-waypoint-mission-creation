@@ -618,6 +618,16 @@ def render_map(points: list[Point]) -> None:
             radius_max_pixels=6,
         )
 
+        tile_layer = pdk.Layer(
+            "TileLayer",
+            data="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            min_zoom=0,
+            max_zoom=19,
+            tile_size=256,
+            opacity=1,
+            pickable=False,
+        )
+
         view_state = pdk.ViewState(
             latitude=avg_lat,
             longitude=avg_lon,
@@ -626,9 +636,9 @@ def render_map(points: list[Point]) -> None:
         )
 
         deck = pdk.Deck(
-            map_style="mapbox://styles/mapbox/satellite-v9",
             initial_view_state=view_state,
-            layers=[layer],
+            layers=[tile_layer, layer],
+            map_style=None,
         )
 
         st.pydeck_chart(deck, use_container_width=True)
