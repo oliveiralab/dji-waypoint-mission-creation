@@ -1,7 +1,7 @@
 # DJI Waypoint Mission Creator
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://dji-waypoint-mission.streamlit.app/)
-[![CI](https://github.com/mailson-unl/dji-waypoint-mission-creation/actions/workflows/ci.yml/badge.svg)](https://github.com/mailson-unl/dji-waypoint-mission-creation/actions/workflows/ci.yml)
+[![CI](https://github.com/oliveiralab/dji-waypoint-mission-creation/actions/workflows/ci.yml/badge.svg)](https://github.com/oliveiralab/dji-waypoint-mission-creation/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
