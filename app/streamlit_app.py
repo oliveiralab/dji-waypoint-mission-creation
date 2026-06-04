@@ -499,9 +499,21 @@ def render_sidebar(points: list[Point] | None, elev_cache_key: str = "") -> Miss
     # Waypoints that carry an elevation value (needed for takeoff selector).
     elev_pts = [p for p in (points or []) if p.elevation_m is not None]
 
+    # ── Takeoff elevation ─────────────────────────────────────────────────────
+    # Seed the stable session-state key with the data-driven default only when:
+    #   (a) the key has never been set, OR
+    #   (b) the stored value is still 0.0 (uninitialized) but we now have real data.
+    default_takeoff = round(erange[0], 2) if erange else 0.0
+    stored_te = st.session_state.get("takeoff_elev_manual")
+    if stored_te is None or (stored_te == 0.0 and default_takeoff != 0.0):
+        st.session_state["takeoff_elev_manual"] = default_takeoff
+
     if terrain_follow:
+        # Step 1 — pick takeoff point or enter elevation directly.
+        # The selector only appears when waypoints already carry elevations;
+        # the manual number-input is ALWAYS available so the user can set the
+        # datum before (or instead of) fetching per-point elevations.
         if elev_pts:
-            # ── Takeoff point selector ──────────────────────────────────────
             pt_labels = [
                 f"Pt {p.id}  —  {p.elevation_m:.1f} m  ({p.lat:.5f}, {p.lon:.5f})"
                 for p in elev_pts
@@ -514,30 +526,35 @@ def render_sidebar(points: list[Point] | None, elev_cache_key: str = "") -> Miss
                 key="takeoff_point_sel",
                 help=(
                     "Select the waypoint nearest your takeoff location. "
-                    "Its ground elevation will be used as the flight reference datum."
+                    "Its ground elevation becomes the flight reference datum."
                 ),
             )
-            if takeoff_sel != "Manual entry":
-                sel_idx = sel_options.index(takeoff_sel) - 1  # offset for "Manual entry"
-                takeoff_elev: float = elev_pts[sel_idx].elevation_m  # type: ignore[assignment]
-                st.sidebar.caption(f"Takeoff datum: **{takeoff_elev:.2f} m** AMSL")
-            else:
-                default_takeoff = round(erange[0], 2) if erange else 0.0
-                takeoff_elev = st.sidebar.number_input(
-                    "Takeoff elevation, AMSL (m)",
-                    min_value=-500.0, max_value=9000.0,
-                    value=default_takeoff, step=0.1,
-                    help=(
-                        "AMSL elevation of your takeoff spot. "
-                        "Look it up at https://apps.nationalmap.gov/elevation/"
-                    ),
-                    key=f"takeoff_elev_manual::{default_takeoff:.2f}",
-                )
         else:
-            # ── No elevations yet — offer to fetch them ──────────────────────
+            takeoff_sel = "Manual entry"
+
+        if takeoff_sel != "Manual entry":
+            sel_idx = sel_options.index(takeoff_sel) - 1  # offset for "Manual entry"
+            takeoff_elev: float = elev_pts[sel_idx].elevation_m  # type: ignore[assignment]
+            st.sidebar.caption(f"Takeoff datum: **{takeoff_elev:.2f} m** AMSL")
+        else:
+            takeoff_elev = st.sidebar.number_input(
+                "Takeoff elevation, AMSL (m)",
+                min_value=-500.0, max_value=9000.0,
+                step=0.1,
+                help=(
+                    "AMSL elevation of your takeoff spot — set this BEFORE "
+                    "building the mission. "
+                    "Look it up at https://apps.nationalmap.gov/elevation/"
+                ),
+                key="takeoff_elev_manual",
+            )
+
+        # Step 2 — if per-point elevations are missing, offer to fetch them.
+        # This is secondary to the takeoff elevation, not a prerequisite.
+        if not elev_pts:
             st.sidebar.warning(
-                "Terrain following needs per-point elevations in your input. "
-                "Current file has none."
+                "Terrain following needs per-point elevations. "
+                "Current file has none — fetch them below."
             )
             if points and st.sidebar.button(
                 "Fetch elevations from OpenTopoData",
@@ -551,14 +568,19 @@ def render_sidebar(points: list[Point] | None, elev_cache_key: str = "") -> Miss
                             for p in updated
                             if p.elevation_m is not None
                         }
-                        if fetched and elev_cache_key:
-                            st.session_state[elev_cache_key] = fetched
-                            st.rerun()
-                        elif fetched:
-                            # Fallback: mutate in place when no cache key given.
-                            for p in points:
-                                if p.id in fetched:
-                                    p.elevation_m = fetched[p.id]
+                        if fetched:
+                            # Auto-update the takeoff datum only if the user
+                            # hasn't set a custom value yet (still at 0 m).
+                            if st.session_state.get("takeoff_elev_manual", 0.0) == 0.0:
+                                st.session_state["takeoff_elev_manual"] = round(
+                                    min(v for v in fetched.values() if v is not None), 2
+                                )
+                            if elev_cache_key:
+                                st.session_state[elev_cache_key] = fetched
+                            else:
+                                for p in points:
+                                    if p.id in fetched:
+                                        p.elevation_m = fetched[p.id]
                             st.rerun()
                         else:
                             st.sidebar.error(
@@ -566,20 +588,20 @@ def render_sidebar(points: list[Point] | None, elev_cache_key: str = "") -> Miss
                             )
                     except Exception as exc:  # noqa: BLE001
                         st.sidebar.error(f"Elevation lookup failed: {exc}")
-            takeoff_elev = 0.0  # placeholder; mission build will raise if no per-point elevs
     else:
-        # ── Terrain following off — show elevation input for reference ───────
-        default_takeoff = round(erange[0], 2) if erange else 0.0
+        # ── Terrain following off — keep the elevation input visible so the
+        #    user can set it before enabling terrain following.
         takeoff_elev = st.sidebar.number_input(
             "Takeoff elevation, AMSL (m)",
             min_value=-500.0, max_value=9000.0,
-            value=default_takeoff, step=0.1,
+            step=0.1,
             help=(
-                "Only used when terrain following is on. Auto-filled from the "
-                "minimum elevation in your points. Look up your spot at "
+                "AMSL elevation of your takeoff spot — used when terrain "
+                "following is enabled. Auto-filled from your points. "
+                "Look up your exact spot at "
                 "https://apps.nationalmap.gov/elevation/"
             ),
-            key=f"takeoff_elev::{default_takeoff:.2f}",
+            key="takeoff_elev_manual",
         )
 
     drone_str = "M3E" if drone_model.startswith("M4E") else drone_model
