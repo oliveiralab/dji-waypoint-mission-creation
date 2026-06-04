@@ -1,7 +1,7 @@
 # DJI Waypoint Mission Creator
 
-[![Open in Streamlit](https://img.shields.io/badge/Open%20in-Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://dji-waypoint-mission-creation.streamlit.app/)
-[![CI](https://github.com/oliveiralab/dji-waypoint-mission-creation/actions/workflows/ci.yml/badge.svg)](https://github.com/oliveiralab/dji-waypoint-mission-creation/actions/workflows/ci.yml)
+[![Open in Streamlit](https://img.shields.io/static/v1?label=Open%20in&message=Streamlit&color=FF4B4B&logo=streamlit&logoColor=white)](https://dji-waypoint-mission-creation.streamlit.app/)
+[![CI](https://github.com/oliveiralab/dji-waypoint-mission-creation/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/oliveiralab/dji-waypoint-mission-creation/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 

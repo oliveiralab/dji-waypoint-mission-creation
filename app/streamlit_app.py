@@ -20,6 +20,7 @@ from pathlib import Path
 import folium
 import streamlit as st
 import streamlit.components.v1 as components
+from branca.element import Element as BrancaElement
 from streamlit_folium import st_folium
 
 from dji_waypoints import MissionConfig, build_mission, load_points
@@ -38,7 +39,7 @@ def _chunked(items: list[Point], size: int) -> list[list[Point]]:
 SUPPORTED_EXTS = {".csv", ".kml", ".geojson", ".json", ".zip"}
 SAMPLE_PATH = Path(__file__).resolve().parent.parent / "examples" / "sample_points.csv"
 REPO_URL = "https://github.com/oliveiralab/dji-waypoint-mission-creation"
-APP_URL = "https://dji-waypoint-mission.streamlit.app/"
+APP_URL = "https://dji-waypoint-mission-creation.streamlit.app/"
 APP_VERSION = "v0.4 · open source"
 
 # US FAA Part 107: drones must stay <= 400 ft (~121.92 m) AGL.
@@ -760,6 +761,15 @@ def render_map(
 
         m = folium.Map(location=[avg_lat, avg_lon], zoom_start=14, tiles=None)
 
+        # Crosshair cursor so users know the map is clickable
+        m.get_root().html.add_child(
+            BrancaElement(
+                "<style>"
+                ".leaflet-container{cursor:crosshair!important}"
+                "</style>"
+            )
+        )
+
         # ── Tile layers ────────────────────────────────────────────────────
         folium.TileLayer(
             tiles=(
@@ -823,10 +833,46 @@ def render_map(
             returned_objects=["last_clicked"],
             key="mission_map",
         )
-        st.caption(
-            "🖱️ Click anywhere on the map to drop a **takeoff pin**. "
-            "Then select **Map pin** in the sidebar Terrain section."
-        )
+
+        terrain_follow = st.session_state.get("terrain_follow", False)
+        if terrain_follow and not takeoff_click:
+            st.markdown(
+                """
+                <div style="background:#fff7e6;border:1.5px solid #f0a500;
+                  border-radius:8px;padding:9px 14px;font-size:13px;
+                  color:#7a5200;margin-top:6px;
+                  display:flex;align-items:center;gap:10px;">
+                  <span style="font-size:18px">✈️</span>
+                  <span><b>Click anywhere on the map</b> to drop your
+                  takeoff pin, then select <b>Map pin</b> in the
+                  sidebar Terrain section.</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        elif takeoff_click:
+            tc_lat = takeoff_click["lat"]
+            tc_lng = takeoff_click["lng"]
+            st.markdown(
+                f"""
+                <div style="background:#e6f0e6;border:1.5px solid #5b8a5a;
+                  border-radius:8px;padding:9px 14px;font-size:13px;
+                  color:#2f5a3a;margin-top:6px;
+                  display:flex;align-items:center;gap:10px;">
+                  <span style="font-size:18px">📍</span>
+                  <span>Takeoff pin set at
+                  <b>{tc_lat:.5f}, {tc_lng:.5f}</b>.
+                  Click again to reposition &middot;
+                  use <b>✕ Clear map pin</b> in the sidebar to remove.</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption(
+                "🖱️ Click anywhere on the map to drop a takeoff pin. "
+                "Enable **Terrain following** in the sidebar to use it."
+            )
         return map_data
 
     except Exception as exc:  # noqa: BLE001 - map is non-critical preview
