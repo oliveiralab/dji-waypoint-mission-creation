@@ -1,11 +1,11 @@
 # DJI Waypoint Mission Creator
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://dji-waypoint-mission.streamlit.app/)
+[![Open in Streamlit](https://img.shields.io/badge/Open%20in-Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://dji-waypoint-mission-creation.streamlit.app/)
 [![CI](https://github.com/oliveiralab/dji-waypoint-mission-creation/actions/workflows/ci.yml/badge.svg)](https://github.com/oliveiralab/dji-waypoint-mission-creation/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-> 🚁 **Try it now:** <https://dji-waypoint-mission.streamlit.app/> — no install needed.
+> 🚁 **Try it now:** <https://dji-waypoint-mission-creation.streamlit.app/> — no install needed.
 
 Convert GIS sampling points (**KML, Shapefile, GeoJSON, or CSV**) into **DJI Pilot 2 waypoint mission KMZ** files for autonomous drone surveys.
 
@@ -48,7 +48,7 @@ A Streamlit UI for non-programmers: upload a point file, tweak settings in the s
 
 ### Use it online
 
-**👉 <https://dji-waypoint-mission.streamlit.app/>**
+**👉 <https://dji-waypoint-mission-creation.streamlit.app/>**
 
 Hosted free on [Streamlit Community Cloud](https://share.streamlit.io). Open it, upload your points, download a KMZ — no install, no account.
 
