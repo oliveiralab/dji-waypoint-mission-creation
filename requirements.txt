@@ -4,6 +4,8 @@
 # pyproj, lxml).
 .
 streamlit>=1.42
+folium>=0.14
+streamlit-folium>=0.22
 
 # Legacy stand-alone scripts at the repo root (not used by the web app)
 python-docx

@@ -17,9 +17,10 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import folium
 import streamlit as st
 import streamlit.components.v1 as components
-import pydeck as pdk
+from streamlit_folium import st_folium
 
 from dji_waypoints import MissionConfig, build_mission, load_points
 from dji_waypoints.config import FT_TO_M
@@ -498,6 +499,8 @@ def render_sidebar(points: list[Point] | None, elev_cache_key: str = "") -> Miss
     erange = elevation_range(points) if points else None
     # Waypoints that carry an elevation value (needed for takeoff selector).
     elev_pts = [p for p in (points or []) if p.elevation_m is not None]
+    # Map-click pin stored by the map interaction handler.
+    takeoff_click = st.session_state.get("takeoff_click")
 
     # ── Takeoff elevation ─────────────────────────────────────────────────────
     # Seed the stable session-state key with the data-driven default only when:
@@ -509,34 +512,74 @@ def render_sidebar(points: list[Point] | None, elev_cache_key: str = "") -> Miss
         st.session_state["takeoff_elev_manual"] = default_takeoff
 
     if terrain_follow:
-        # Step 1 — pick takeoff point or enter elevation directly.
-        # The selector only appears when waypoints already carry elevations;
-        # the manual number-input is ALWAYS available so the user can set the
-        # datum before (or instead of) fetching per-point elevations.
+        # Step 1 — pick takeoff source: map pin, named waypoint, or manual entry.
+        sel_options: list[str] = ["Manual entry"]
+        if takeoff_click:
+            pin_label = (
+                f"📍 Map pin  ({takeoff_click['lat']:.5f}, {takeoff_click['lng']:.5f})"
+            )
+            sel_options.append(pin_label)
         if elev_pts:
-            pt_labels = [
+            sel_options += [
                 f"Pt {p.id}  —  {p.elevation_m:.1f} m  ({p.lat:.5f}, {p.lon:.5f})"
                 for p in elev_pts
             ]
-            sel_options = ["Manual entry"] + pt_labels
-            takeoff_sel = st.sidebar.selectbox(
-                "Takeoff point",
-                sel_options,
-                index=0,
-                key="takeoff_point_sel",
-                help=(
-                    "Select the waypoint nearest your takeoff location. "
-                    "Its ground elevation becomes the flight reference datum."
-                ),
-            )
-        else:
-            takeoff_sel = "Manual entry"
 
-        if takeoff_sel != "Manual entry":
-            sel_idx = sel_options.index(takeoff_sel) - 1  # offset for "Manual entry"
-            takeoff_elev: float = elev_pts[sel_idx].elevation_m  # type: ignore[assignment]
+        takeoff_sel = st.sidebar.selectbox(
+            "Takeoff point",
+            sel_options,
+            index=0,
+            key="takeoff_point_sel",
+            help=(
+                "Click on the map to drop a pin, or select the waypoint "
+                "nearest your takeoff location. "
+                "Its ground elevation becomes the flight reference datum."
+            ),
+        )
+
+        if takeoff_sel != "Manual entry" and takeoff_sel.startswith("📍 Map pin"):
+            # ── Map-pin branch: fetch elevation for clicked coordinates ──────
+            tc_lat = takeoff_click["lat"]
+            tc_lng = takeoff_click["lng"]
+            cached_pin_elev: float | None = st.session_state.get("takeoff_click_elev")
+            if cached_pin_elev is None:
+                with st.spinner("Fetching elevation for takeoff pin…"):
+                    try:
+                        tmp_pt = Point(id=0, lat=tc_lat, lon=tc_lng)
+                        result_pts = fetch_elevations([tmp_pt])
+                        cached_pin_elev = result_pts[0].elevation_m
+                        if cached_pin_elev is not None:
+                            st.session_state["takeoff_click_elev"] = cached_pin_elev
+                            st.session_state["takeoff_elev_manual"] = round(
+                                cached_pin_elev, 2
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        st.sidebar.error(f"Elevation lookup failed: {exc}")
+            if cached_pin_elev is not None:
+                takeoff_elev: float = cached_pin_elev
+                st.sidebar.caption(
+                    f"Takeoff datum: **{takeoff_elev:.2f} m** AMSL  "
+                    f"({tc_lat:.5f}, {tc_lng:.5f})"
+                )
+            else:
+                # Fall back to manual if fetch failed
+                takeoff_elev = st.sidebar.number_input(
+                    "Takeoff elevation, AMSL (m)",
+                    min_value=-500.0, max_value=9000.0,
+                    step=0.1,
+                    key="takeoff_elev_manual",
+                    help="Elevation lookup failed — enter manually.",
+                )
+
+        elif takeoff_sel != "Manual entry":
+            # ── Named-waypoint branch ────────────────────────────────────────
+            # Find the matching elev_pt by label.
+            sel_idx = sel_options.index(takeoff_sel) - (2 if takeoff_click else 1)
+            takeoff_elev = elev_pts[sel_idx].elevation_m  # type: ignore[assignment]
             st.sidebar.caption(f"Takeoff datum: **{takeoff_elev:.2f} m** AMSL")
+
         else:
+            # ── Manual entry branch ──────────────────────────────────────────
             takeoff_elev = st.sidebar.number_input(
                 "Takeoff elevation, AMSL (m)",
                 min_value=-500.0, max_value=9000.0,
@@ -548,6 +591,13 @@ def render_sidebar(points: list[Point] | None, elev_cache_key: str = "") -> Miss
                 ),
                 key="takeoff_elev_manual",
             )
+
+        # Clear takeoff pin button
+        if takeoff_click:
+            if st.sidebar.button("✕ Clear map pin", key="clear_takeoff_pin"):
+                st.session_state.pop("takeoff_click", None)
+                st.session_state.pop("takeoff_click_elev", None)
+                st.rerun()
 
         # Step 2 — if per-point elevations are missing, offer to fetch them.
         # This is secondary to the takeoff elevation, not a prerequisite.
@@ -690,51 +740,98 @@ def render_file_bar(src_path: Path, points: list[Point]) -> None:
     )
 
 
-def render_map(points: list[Point]) -> None:
+def render_map(
+    points: list[Point],
+    takeoff_click: dict | None = None,
+) -> dict | None:
+    """Render an interactive Folium map and return the st_folium data dict.
+
+    The caller should inspect ``result["last_clicked"]`` to detect new clicks.
+    Satellite tiles are provided by ESRI World Imagery with an OSM fallback.
+    A takeoff-point marker (red plane icon) is drawn when *takeoff_click* is set.
+    """
     if not points:
         st.info("Upload a file to preview the mission points on the map.")
-        return
+        return None
 
     try:
         avg_lat = sum(p.lat for p in points) / len(points)
         avg_lon = sum(p.lon for p in points) / len(points)
 
-        layer = pdk.Layer(
-            "ScatterplotLayer",
-            data=[{"lat": p.lat, "lon": p.lon} for p in points],
-            get_position="[lon, lat]",
-            get_fill_color=[91, 138, 90, 180],
-            get_radius=30,
-            radius_min_pixels=3,
-            radius_max_pixels=6,
-        )
+        m = folium.Map(location=[avg_lat, avg_lon], zoom_start=14, tiles=None)
 
-        tile_layer = pdk.Layer(
-            "TileLayer",
-            data="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            min_zoom=0,
-            max_zoom=19,
-            tile_size=256,
-            opacity=1,
-            pickable=False,
-        )
+        # ── Tile layers ────────────────────────────────────────────────────
+        folium.TileLayer(
+            tiles=(
+                "https://server.arcgisonline.com/ArcGIS/rest/services/"
+                "World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            ),
+            attr=(
+                "Tiles &copy; Esri &mdash; Source: Esri, USGS, USDA, "
+                "AEX, GeoEye, Getmapping, Aerogrid, IGN &amp; the GIS community"
+            ),
+            name="Satellite",
+            overlay=False,
+            control=True,
+        ).add_to(m)
 
-        view_state = pdk.ViewState(
-            latitude=avg_lat,
-            longitude=avg_lon,
-            zoom=14,
-            pitch=0,
-        )
+        folium.TileLayer(
+            tiles="OpenStreetMap",
+            name="Street map",
+            overlay=False,
+            control=True,
+        ).add_to(m)
 
-        deck = pdk.Deck(
-            initial_view_state=view_state,
-            layers=[tile_layer, layer],
-            map_style=None,
-        )
+        folium.LayerControl(position="topright").add_to(m)
 
-        st.pydeck_chart(deck, use_container_width=True)
+        # ── Waypoint markers ───────────────────────────────────────────────
+        for p in points:
+            elev_line = f"<br>{p.elevation_m:.1f} m AMSL" if p.elevation_m is not None else ""
+            folium.CircleMarker(
+                location=[p.lat, p.lon],
+                radius=7,
+                color="#3f6b3e",
+                weight=1.5,
+                fill=True,
+                fill_color="#5b8a5a",
+                fill_opacity=0.85,
+                tooltip=f"Pt {p.id}",
+                popup=folium.Popup(
+                    f"<b>Pt {p.id}</b><br>{p.lat:.5f}, {p.lon:.5f}{elev_line}",
+                    max_width=180,
+                ),
+            ).add_to(m)
+
+        # ── Takeoff marker (set by clicking the map) ────────────────────────
+        if takeoff_click:
+            tc_lat = takeoff_click["lat"]
+            tc_lng = takeoff_click["lng"]
+            folium.Marker(
+                location=[tc_lat, tc_lng],
+                tooltip="Takeoff point",
+                popup=folium.Popup(
+                    f"<b>Takeoff</b><br>{tc_lat:.5f}, {tc_lng:.5f}",
+                    max_width=180,
+                ),
+                icon=folium.Icon(color="red", icon="plane", prefix="fa"),
+            ).add_to(m)
+
+        map_data = st_folium(
+            m,
+            use_container_width=True,
+            height=380,
+            returned_objects=["last_clicked"],
+            key="mission_map",
+        )
+        st.caption(
+            "🖱️ Click anywhere on the map to drop a **takeoff pin**. "
+            "Then select **Map pin** in the sidebar Terrain section."
+        )
+        return map_data
+
     except Exception as exc:  # noqa: BLE001 - map is non-critical preview
         st.caption(f"Map preview unavailable ({exc.__class__.__name__}).")
+        return None
 
 
 def render_metric_strip(points: list[Point], config: MissionConfig,
@@ -1067,7 +1164,24 @@ def main() -> None:
     with col_center:
         st.markdown("### 2 — Preview")
         render_file_bar(src_path, points)
-        render_map(points)
+        map_data = render_map(
+            points,
+            takeoff_click=st.session_state.get("takeoff_click"),
+        )
+        # Persist a new map click so the sidebar can offer it as takeoff datum.
+        if map_data and map_data.get("last_clicked"):
+            clicked = map_data["last_clicked"]
+            prev = st.session_state.get("takeoff_click")
+            if (
+                prev is None
+                or abs(clicked["lat"] - prev["lat"]) > 1e-7
+                or abs(clicked["lng"] - prev["lng"]) > 1e-7
+            ):
+                st.session_state["takeoff_click"] = clicked
+                # Clear any previously-cached elevation for the pin so it's
+                # re-fetched for the new location.
+                st.session_state.pop("takeoff_click_elev", None)
+                st.rerun()
         render_metric_strip(points, config, agl_unit)
         render_waypoint_table(points)
 
